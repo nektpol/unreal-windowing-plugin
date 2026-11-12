@@ -6,6 +6,12 @@ Copy the plugin into your project's `Plugins/WindowingPlugin` directory, enable 
 
 Each open creates a fresh widget. Keep state in the host application if it should survive closing and reopening.
 
-- [M0 implementation notes](docs/WindowingPlugin_M0.md)
-- [M0 Blueprint sample and acceptance tests](docs/WindowingPlugin_M0_Step_6_Test_Guide.md)
-- [M1 lifecycle and multi-window plan](docs/WindowingPlugin_M1_Plan.md)
+| Milestone | Deliverable |
+|---|---|
+| M0 | Native UMG window creation, title and state controls, lifecycle events, and shutdown handling. [Implementation notes](docs/WindowingPlugin_M0.md) · [Blueprint sample](docs/WindowingPlugin_M0_Step_6_Test_Guide.md) |
+| M1 | Lifecycle and session isolation with three simultaneous windows, tested in packaged Win64 builds. [Automated acceptance](docs/WindowingPlugin_M1_Tests.md) |
+| M2 | Keyed placement persistence, DPI conversion, and safe recovery when a display is unavailable. [Implementation guide](docs/WindowingPlugin_M2_Guide.md) |
+| M3 | Report managed-window activation and focus changes so the host can decide how to route viewport or camera input. |
+| M4 | Prepare the plugin for distribution with Blueprint usage docs, a sample project, repeatable packaging, and a release test matrix. |
+
+The v1.0 release follows the Windows distribution checks. Docking, existing-widget attachment, and additional platforms are possible extensions.

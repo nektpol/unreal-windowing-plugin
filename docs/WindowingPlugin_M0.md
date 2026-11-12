@@ -21,4 +21,4 @@ In the installed UE 5.8 source, a Slate destroy request can run close callbacks 
 
 ## Validation
 
-The UE 5.8 Win64 Development Editor build compiled and linked the M0 baseline with the `TObjectPtr` GC fix and no collector warning. The sample smoke test was reported as working. Packaged Development and Shipping results and the individual GC, rollback, and shutdown checks have no recorded results here. [Sample and acceptance guide](WindowingPlugin_M0_Step_6_Test_Guide.md)
+The UE 5.8 Win64 Development Editor build compiled and linked the M0 baseline with the `TObjectPtr` GC fix and no collector warning. The Blueprint sample smoke test was reported as working. The separate M1 C++ sample verified lifecycle, GC, rollback, and shutdown in packaged Win64 Development and Shipping. [Blueprint sample](WindowingPlugin_M0_Step_6_Test_Guide.md) · [Packaged results](WindowingPlugin_M1_Tests.md#verification)
