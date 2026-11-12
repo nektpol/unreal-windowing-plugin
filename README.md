@@ -12,6 +12,7 @@ Each open creates a fresh widget. Keep state in the host application if it shoul
 | M1 | Lifecycle and session isolation with three simultaneous windows, tested in packaged Win64 builds. [Automated acceptance](docs/WindowingPlugin_M1_Tests.md) |
 | M2 | Keyed placement persistence, DPI conversion, and display recovery. The editor build and placement tests passed, and the live placement check was confirmed. [Implementation and verification](docs/WindowingPlugin_M2_Guide.md) |
 | M3 | Managed-window activation and keyboard focus are implemented. The live check was confirmed. [Implementation and verification](docs/WindowingPlugin_M3_Guide.md) |
-| M4 | Next milestone. Build the Win64 distribution and sample archives, then verify a clean install and packaged behavior. [Release guide and acceptance test](docs/WindowingPlugin_M4_Guide.md) |
+| M4 | The Win64 plugin and sample ZIPs build successfully and their checksums match. Final packaged runtime and live release checks remain pending. [Release guide and acceptance test](docs/WindowingPlugin_M4_Guide.md) |
+| M5 | Dock and undock managed windows in the game viewport, collapse docked panels, and resize them with dividers. [Docking roadmap](docs/WindowingPlugin_M5_Docking_Roadmap.md) |
 
-The v1.0 release follows the Windows distribution checks. Docking, existing-widget attachment, and additional platforms are possible extensions.
+The v1.0 release follows the Windows distribution checks. M5 builds on that baseline.

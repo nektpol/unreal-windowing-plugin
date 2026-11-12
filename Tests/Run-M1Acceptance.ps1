@@ -3,10 +3,12 @@ param(
     [string] $EngineRoot = 'C:\Program Files\Epic Games\UE_5.8',
     [ValidateSet('Development', 'Shipping')]
     [string[]] $Configuration = @('Development', 'Shipping'),
-    [string] $OutputRoot = (Join-Path ([IO.Path]::GetTempPath()) ('WindowingM1-' + [guid]::NewGuid().ToString('N')))
+    [string] $OutputRoot = (Join-Path ([IO.Path]::GetTempPath()) ('WindowingM1-' + [guid]::NewGuid().ToString('N'))),
+    [string] $PluginPackage
 )
 
 $ErrorActionPreference = 'Stop'
+$OutputRoot = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($OutputRoot)
 $uat = Join-Path $EngineRoot 'Engine\Build\BatchFiles\RunUAT.bat'
 if (!(Test-Path -LiteralPath $uat -PathType Leaf)) {
     throw "RunUAT.bat not found at $uat"
@@ -19,10 +21,20 @@ $pluginRoot = Split-Path -Parent $PSScriptRoot
 $sample = Join-Path $OutputRoot 'Sample'
 New-Item -ItemType Directory -Path $OutputRoot | Out-Null
 Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'Sample') -Destination $sample -Recurse
-$pluginCopy = Join-Path $sample 'Plugins\WindowingPlugin'
-New-Item -ItemType Directory -Path $pluginCopy -Force | Out-Null
-foreach ($name in @('WindowingPlugin.uplugin', 'Source', 'Resources')) {
-    Copy-Item -LiteralPath (Join-Path $pluginRoot $name) -Destination $pluginCopy -Recurse
+$pluginsDirectory = Join-Path $sample 'Plugins'
+$pluginCopy = Join-Path $pluginsDirectory 'WindowingPlugin'
+New-Item -ItemType Directory -Path $pluginsDirectory -Force | Out-Null
+if ($PluginPackage) {
+    $candidate = (Resolve-Path -LiteralPath $PluginPackage).Path
+    if (!(Test-Path -LiteralPath (Join-Path $candidate 'WindowingPlugin.uplugin') -PathType Leaf)) {
+        throw 'PluginPackage must point to the extracted WindowingPlugin directory.'
+    }
+    Copy-Item -LiteralPath $candidate -Destination $pluginCopy -Recurse
+} else {
+    New-Item -ItemType Directory -Path $pluginCopy | Out-Null
+    foreach ($name in @('WindowingPlugin.uplugin', 'Source', 'Resources')) {
+        Copy-Item -LiteralPath (Join-Path $pluginRoot $name) -Destination $pluginCopy -Recurse
+    }
 }
 
 $project = Join-Path $sample 'WindowingM1.uproject'

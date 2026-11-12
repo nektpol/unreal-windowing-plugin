@@ -2,139 +2,27 @@
 
 M4 produces a versioned Win64 plugin ZIP, a separate sample project ZIP, and a recorded release check. The release uses the M0–M3 API for window lifecycle, placement, and focus. Use UE 5.8.4 for the first binary package and record the engine changelist alongside the release. Build and test again before claiming compatibility with another engine build.
 
-## 1. Prepare the release descriptor and file filter
+## 1. Review the release inputs
 
-In the root `WindowingPlugin.uplugin`, update these entries in the existing JSON. Keep the existing module declaration and other fields. `Version` increases from the existing value of 1.
+The plugin descriptor declares version 1.0.0 and Win64 support. Review the version before the next release. The package filter includes the README, documentation, and MIT license. Keep the sample project in its separate ZIP.
 
-```json
-"Version": 2,
-"VersionName": "1.0.0",
-"IsBetaVersion": false,
-"SupportedTargetPlatforms": ["Win64"],
-```
+## 2. Build from PowerShell
 
-Within the existing `WindowingPlugin` module object, add this field after `LoadingPhase`. Put a comma after the preceding field.
-
-```json
-"PlatformAllowList": ["Win64"]
-```
-
-Create `Config/FilterPlugin.ini` in the plugin root with the following contents. The source sample is shipped as a separate ZIP.
-
-```ini
-[FilterPlugin]
-/LICENSE
-/README.md
-/docs/...
-```
-
-Keep the plugin README's installation and Blueprint API summary. Include the MIT license in both archives. Record the tested engine patch and changelist, supported platform, and any outstanding checks in the release notes before publishing.
-
-## 2. Add the release build script
-
-Create `Tests/Build-WindowsRelease.ps1` with the following contents. Run it from a PowerShell session with the UE 5.8 Windows toolchain installed. The output directory must be new because Unreal's `BuildPlugin` can clear an existing package destination. The script stages its input outside the plugin checkout, so UAT can write its temporary build files there.
+From the plugin repository root, run the release script. It stages the source in a new directory, builds the Win64 package with Unreal Automation Tool, and prints the directory containing the plugin ZIP, sample ZIP, and SHA-256 checksums.
 
 ```powershell
-[CmdletBinding()]
-param(
-    [string] $EngineRoot = 'C:\Program Files\Epic Games\UE_5.8',
-    [string] $OutputRoot = (Join-Path ([IO.Path]::GetTempPath()) ('WpRel-' + [guid]::NewGuid().ToString('N').Substring(0, 8)))
-)
-
-$ErrorActionPreference = 'Stop'
-$OutputRoot = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($OutputRoot)
-$plugin = Split-Path -Parent $PSScriptRoot
-$uat = Join-Path $EngineRoot 'Engine\Build\BatchFiles\RunUAT.bat'
-if (!(Test-Path -LiteralPath $uat -PathType Leaf)) {
-    throw "RunUAT.bat not found at $uat"
-}
-if (Test-Path -LiteralPath $OutputRoot) {
-    throw "Use a new output directory: $OutputRoot"
-}
-
-$descriptor = Join-Path $plugin 'WindowingPlugin.uplugin'
-$version = (Get-Content -LiteralPath $descriptor -Raw | ConvertFrom-Json).VersionName
-if ($version -notmatch '^\d+\.\d+\.\d+$') {
-    throw 'Set VersionName to a release version such as 1.0.0.'
-}
-
-$inputPlugin = Join-Path $OutputRoot 'Input\WindowingPlugin'
-$package = Join-Path $OutputRoot 'Package\WindowingPlugin'
-New-Item -ItemType Directory -Path $inputPlugin -Force | Out-Null
-foreach ($name in @('WindowingPlugin.uplugin', 'Config', 'Source', 'Resources', 'LICENSE', 'README.md', 'docs')) {
-    Copy-Item -LiteralPath (Join-Path $plugin $name) -Destination $inputPlugin -Recurse
-}
-
-$log = Join-Path $OutputRoot 'BuildPlugin.log'
-$inputDescriptor = Join-Path $inputPlugin 'WindowingPlugin.uplugin'
-& $uat BuildPlugin "-Plugin=$inputDescriptor" "-Package=$package" -HostPlatforms=Win64 -TargetPlatforms=Win64 -unattended 2>&1 |
-    Tee-Object -FilePath $log
-if ($LASTEXITCODE -ne 0) {
-    throw "BuildPlugin failed. See $log"
-}
-
-foreach ($name in @('WindowingPlugin.uplugin', 'Binaries\Win64', 'Source', 'LICENSE', 'README.md', 'docs')) {
-    if (!(Test-Path -LiteralPath (Join-Path $package $name))) {
-        throw "The plugin package is missing $name."
-    }
-}
-
-$pluginZip = Join-Path $OutputRoot "WindowingPlugin-$version-Win64.zip"
-Compress-Archive -LiteralPath $package -DestinationPath $pluginZip
-
-$sample = Join-Path $OutputRoot 'WindowingPluginSample'
-Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'Sample') -Destination $sample -Recurse
-Copy-Item -LiteralPath (Join-Path $plugin 'LICENSE') -Destination $sample
-@(
-    'Extract the Win64 plugin ZIP.'
-    'Place its WindowingPlugin folder under this sample project''s Plugins directory.'
-    'Open WindowingM1.uproject in Unreal Engine 5.8 and build when prompted.'
-    'The sample is a C++ acceptance harness. The plugin README links to the interactive Blueprint sample instructions.'
-) | Set-Content -LiteralPath (Join-Path $sample 'README.txt')
-$sampleZip = Join-Path $OutputRoot "WindowingPlugin-$version-Sample.zip"
-Compress-Archive -LiteralPath $sample -DestinationPath $sampleZip
-
-Get-FileHash -Algorithm SHA256 -LiteralPath $pluginZip, $sampleZip |
-    ForEach-Object { '{0}  {1}' -f $_.Hash, [IO.Path]::GetFileName($_.Path) } |
-    Set-Content -LiteralPath (Join-Path $OutputRoot 'SHA256SUMS.txt')
-Write-Host "Release candidates and checksums: $OutputRoot"
+.\Tests\Build-WindowsRelease.ps1
 ```
 
-The plugin ZIP contains a single top-level `WindowingPlugin` folder. The sample ZIP contains the existing C++ harness project. Install the plugin ZIP into the sample before opening its project. Keep the build log with the local verification results.
+Pass `-EngineRoot` if UE 5.8 is installed elsewhere. Pass `-OutputRoot` to choose a new output directory. Keep `BuildPlugin.log` with the local verification results. [Release script](../Tests/Build-WindowsRelease.ps1)
 
-## 3. Let the acceptance runner use an extracted release ZIP
+## 3. Test the extracted package
 
-In `Tests/Run-M1Acceptance.ps1`, add a comma after the existing `$OutputRoot` parameter and add this parameter before the closing `)`.
-
-```powershell
-[string] $PluginPackage
-```
-
-Find the existing `$pluginCopy = Join-Path $sample 'Plugins\WindowingPlugin'` line. Replace it, the following `New-Item` line, and the following `foreach` loop with the block below. Leave `$project = Join-Path $sample 'WindowingM1.uproject'` and the rest of the runner in place.
-
-```powershell
-$pluginsDirectory = Join-Path $sample 'Plugins'
-$pluginCopy = Join-Path $pluginsDirectory 'WindowingPlugin'
-New-Item -ItemType Directory -Path $pluginsDirectory -Force | Out-Null
-if ($PluginPackage) {
-    $candidate = (Resolve-Path -LiteralPath $PluginPackage).Path
-    if (!(Test-Path -LiteralPath (Join-Path $candidate 'WindowingPlugin.uplugin') -PathType Leaf)) {
-        throw 'PluginPackage must point to the extracted WindowingPlugin directory.'
-    }
-    Copy-Item -LiteralPath $candidate -Destination $pluginCopy -Recurse
-} else {
-    New-Item -ItemType Directory -Path $pluginCopy | Out-Null
-    foreach ($name in @('WindowingPlugin.uplugin', 'Source', 'Resources')) {
-        Copy-Item -LiteralPath (Join-Path $pluginRoot $name) -Destination $pluginCopy -Recurse
-    }
-}
-```
-
-The runner still supports its existing source-based use. For release testing, pass the extracted package. Unreal may recompile package source for the sample target during packaging, so include the clean editor install in the final check to exercise the supplied editor binaries.
+The existing acceptance runner takes `-PluginPackage` with the path to an extracted `WindowingPlugin` folder. Without that parameter, it copies the plugin source from the checkout. Unreal may recompile package source for the sample game target. The clean Blueprint project check exercises the supplied editor DLL. [Acceptance runner](../Tests/Run-M1Acceptance.ps1)
 
 ## 4. Final release acceptance test
 
-A disposable UE 5.8.4 preflight produced both ZIPs, verified their checksums, and loaded the extracted editor DLL in a clean Blueprint-only host. The M2 geometry and storage tests passed in that host. The packaged runtime scenarios and live release checks below remain to be run for the release candidate.
+The checked-in release script built the Win64 editor, Development, and Shipping targets and produced both 1.0.0 candidate ZIPs. Both checksums and archive entry points were verified. A separate UE 5.8.4 preflight loaded the extracted editor DLL in a clean Blueprint-only host, where the M2 geometry and storage tests passed. The final packaged runtime scenarios and live release checks below are still pending.
 
 From the plugin repository root, run the following. It builds a new candidate, extracts the plugin ZIP, and runs the existing lifecycle, shutdown, and registration rollback scenarios against that extracted copy in both packaged configurations.
 
