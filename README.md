@@ -1,24 +1,11 @@
 # WindowingPlugin
 
-**WindowingPlugin** is a modular window-management plugin for Unreal Engine 5.8, designed to bring flexible desktop-style interfaces to Unreal applications.
+WindowingPlugin opens UMG widgets in independent Windows desktop windows. It targets Unreal Engine 5.8 and exposes a GameInstance subsystem for Blueprint and C++.
 
-The plugin aims to let developers display Unreal Motion Graphics (UMG) widgets in independent native operating-system windows, alongside the application's main window. These additional windows can be moved, resized, and arranged across multiple monitors, making it possible to build customizable, multi-window workspaces.
+Copy the plugin into your project's `Plugins/WindowingPlugin` directory, enable it, and build the project. Get the **Wp Windowing Subsystem**, call **Open Widget Window** with a widget class, and store the returned handle on `Success`. Use it to query, rename, or request closure of the window. Bind **On Window Closed** to observe completion.
 
-## Planned Features
+Each open creates a fresh widget. Keep state in the host application if it should survive closing and reopening.
 
-- **Native desktop windows:** Open UMG interfaces in separate operating-system windows.
-- **Multiple windows:** Create and manage several independent windows at once.
-- **Window controls:** Open, close, show, hide, resize, reposition, and update window titles programmatically.
-- **Blueprint and C++ integration:** Control windows and respond to lifecycle events through straightforward APIs.
-- **Focus and input awareness:** Detect which managed window is active so applications can coordinate their own input behavior.
-- **Persistent layouts:** Save and restore window placement, including practical handling of multi-monitor configurations.
-- **Extensible workspace support:** Provide a foundation for future features such as detachable panels and docking.
-- **Reusable design:** Keep window management independent of any specific application's data or UI structure.
-
-## Platform and Engine Support
-
-WindowingPlugin targets **Unreal Engine 5.8** and is designed for desktop runtime applications, with **Windows** as the initial platform. Support for other desktop operating systems may be explored in the future.
-
-## Project Status
-
-WindowingPlugin is currently in development. The capabilities described above represent the intended direction of the plugin and are not all implemented yet.
+- [M0 implementation notes](docs/WindowingPlugin_M0.md)
+- [M0 Blueprint sample and acceptance tests](docs/WindowingPlugin_M0_Step_6_Test_Guide.md)
+- [M1 lifecycle and multi-window plan](docs/WindowingPlugin_M1_Plan.md)
