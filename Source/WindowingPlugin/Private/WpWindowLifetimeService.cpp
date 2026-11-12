@@ -195,8 +195,12 @@ FWpWindowResult FWpWindowLifetimeService::CreateWindow(const FGuid& SessionId,
     }
     Entry.RetainedContent = Content;
     Entry.CreateOptions = Options;
+    Entry.FloatingContentSlot = SNew(SBox)[Content];
+    FWpWindowHandle FrameHandle;
+    FrameHandle.Id = Id;
+    Entry.FloatingFrame = BuildPanelFrame(SessionId, FrameHandle, Entry.FloatingContentSlot.ToSharedRef(), true);
     Entry.Host = MakeUnique<FWpNativeWindowHost>();
-    Entry.Host->Construct(Options, Content, MakeTransferCloseCallback(Id, false));
+    Entry.Host->Construct(Options, Entry.FloatingFrame.Root.ToSharedRef(), MakeTransferCloseCallback(Id, false));
 
     if (!Entry.Host->RegisterWindow())
     {
@@ -422,6 +426,17 @@ void FWpWindowLifetimeService::TickWindowFocus()
 void FWpWindowLifetimeService::OnSlatePostTick(float)
 {
     Drain();
+    if (!bShuttingDown && OperationDepth == 0)
+    {
+        for (const auto& Pair : DockGroups)
+        {
+            FWpDockGroup& Group = *Pair.Value;
+            if (Group.Host && Group.Frame.IsCollapsed() && Group.Host->IsMaximized())
+            {
+                Group.Frame.SetCollapsed(false);
+            }
+        }
+    }
     TickPlacements();
     TickWindowFocus();
 }
@@ -461,6 +476,8 @@ void FWpWindowLifetimeService::Drain()
             Entry.Host.Reset();
         }
         RemoveGroupMember(Entry);
+        Entry.FloatingFrame = {};
+        Entry.FloatingContentSlot.Reset();
         Entry.RetainedContent.Reset();
         Record.State = Entry.bFailedCreation ? EWpWindowState::Failed : EWpWindowState::Closed;
         if (!bShuttingDown && !IsEngineExitRequested() && !Entry.bFailedCreation &&
@@ -690,4 +707,15 @@ void FWpWindowLifetimeService::TickPlacements()
     {
         FlushPlacements();
     }
+}
+
+UUserWidget* FWpWindowLifetimeService::GetWidgetFromHandle(
+    const FGuid& SessionId, FWpWindowHandle Handle) const
+{
+    const FWpWindowRuntimeEntry* Entry = FindPublished(SessionId, Handle);
+    if (Entry && Entry->Record->State == EWpWindowState::Open)
+    {
+        return Entry->Record->Widget.Get();
+    }
+    return nullptr;
 }

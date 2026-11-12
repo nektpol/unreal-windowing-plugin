@@ -331,3 +331,45 @@ FWpWindowResult UWpWindowingSubsystem::DockGroup(FGuid GroupId)
     }
     return WpWindowingSubsystemPrivate::Unavailable();
 }
+
+UUserWidget* UWpWindowingSubsystem::GetWidgetFromHandle(FWpWindowHandle Handle) const
+{
+	if (IsInGameThread() && !bDeinitializing && SessionId.IsValid() && !IsEngineExitRequested())
+	{
+		if (const FWpWindowLifetimeService* Service = WpGetWindowLifetimeService())
+		{
+			return Service->GetWidgetFromHandle(SessionId, Handle);
+		}
+	}
+	return nullptr;
+}
+
+FWpWindowResult UWpWindowingSubsystem::OpenWidgetWindowWithWidget(
+	TSubclassOf<UUserWidget> WidgetClass, const FWpWindowCreateOptions& Options,
+	APlayerController* OwningPlayer, FWpWindowHandle& OutHandle, UUserWidget*& OutWidget)
+{
+	OutWidget = nullptr;
+	const FWpWindowResult Result = OpenWidgetWindow(WidgetClass, Options, OwningPlayer, OutHandle);
+	if (Result.IsSuccess())
+	{
+		OutWidget = GetWidgetFromHandle(OutHandle);
+	}
+	return Result;
+}
+
+FWpWindowResult UWpWindowingSubsystem::SetWindowCollapsed(
+	FWpWindowHandle Handle, bool bCollapsed)
+{
+	if (!IsInGameThread())
+	{
+		return WpWindowingSubsystemPrivate::WrongThread();
+	}
+	if (!bDeinitializing && SessionId.IsValid() && !IsEngineExitRequested())
+	{
+		if (FWpWindowLifetimeService* Service = WpGetWindowLifetimeService())
+		{
+			return Service->SetWindowCollapsed(SessionId, Handle, bCollapsed);
+		}
+	}
+	return WpWindowingSubsystemPrivate::Unavailable();
+}

@@ -2,9 +2,11 @@
 
 #include "WpNativeWindowHost.h"
 
+#include "Brushes/SlateColorBrush.h"
 #include "Framework/Application/SlateApplication.h"
 #include "GenericPlatform/GenericWindow.h"
 #include "Widgets/SNullWidget.h"
+#include "Widgets/Layout/SBorder.h"
 
 #if PLATFORM_WINDOWS
 #include "Windows/WindowsHWrapper.h"
@@ -25,7 +27,13 @@ void FWpNativeWindowHost::Construct(const FWpWindowCreateOptions& Options,
         .SupportsMinimize(true)
         .SupportsMaximize(true);
 
-    Window->SetContent(Content);
+    // Clear exposed client pixels even when collapsed content stops painting.
+    static const FSlateColorBrush ClientBackground(FLinearColor::Black);
+    SAssignNew(ContentBackground, SBorder)
+        .BorderImage(&ClientBackground)
+        .Padding(0.f)
+        [Content];
+    Window->SetContent(ContentBackground.ToSharedRef());
     Window->SetOnWindowClosed(PreClose);
 }
 
@@ -76,6 +84,11 @@ void FWpNativeWindowHost::MaximizeWindow()
     }
 }
 
+bool FWpNativeWindowHost::IsMaximized() const
+{
+    return HasNativeHandle() && Window->IsWindowMaximized();
+}
+
 void FWpNativeWindowHost::ReleaseResources()
 {
     if (Window.IsValid())
@@ -84,14 +97,15 @@ void FWpNativeWindowHost::ReleaseResources()
         Window->SetOnWindowClosed(FOnWindowClosed());
         Window->SetContent(SNullWidget::NullWidget);
         Window.Reset();
+        ContentBackground.Reset();
     }
 }
 
 void FWpNativeWindowHost::SetContent(const TSharedRef<SWidget>& Content)
 {
-    if (Window)
+    if (ContentBackground)
     {
-        Window->SetContent(Content);
+        ContentBackground->SetContent(Content);
     }
 }
 

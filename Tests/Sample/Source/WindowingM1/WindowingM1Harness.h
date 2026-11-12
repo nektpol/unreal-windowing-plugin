@@ -38,6 +38,7 @@ class UWindowingM1GameInstance final : public UGameInstance
 
     bool TickTests(float DeltaTime);
     bool TickDockingTest();
+    bool TickCollapseTest();
     void OpenInitialWindows();
     void CheckInputAndRequestCloses();
     void CheckInitialCloses();
@@ -55,6 +56,11 @@ class UWindowingM1GameInstance final : public UGameInstance
 
     UFUNCTION()
     void OnClosed(FWpWindowClosedEvent Event);
+
+    UFUNCTION()
+    void OnPresentationChanged(FWpWindowHandle Handle, FWpWindowPresentation Presentation);
+
+    int32 PresentationChanges = 0;
 
     enum class EPhase : uint8
     {

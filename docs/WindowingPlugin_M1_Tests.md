@@ -24,8 +24,14 @@ Use the [M0 Blueprint sample](WindowingPlugin_M0_Step_6_Test_Guide.md) for an in
 ## Verification
 
 All three scenarios passed on UE 5.8.4 (CL 58902052) in both packaged Win64 Development and Shipping. Each lifecycle run completed 100 cycles with 104 opened and 104 closed events.
-## Optional M5.1 docking scenario
 
-From the plugin root, run `.\Tests\Run-M1Acceptance.ps1 -Configuration Development -IncludeDocking`. This packages the sample, runs the three existing scenarios, then runs `m51` in a windowed game with a runtime workspace. Add `Shipping` to the configuration list to run both builds.
+## Optional M5 docking scenarios
+
+From the plugin root, run `.\Tests\Run-M1Acceptance.ps1 -Configuration Development -IncludeDocking`. This packages the sample, runs the three existing scenarios, then runs `m51` and `m52` in windowed games with a runtime workspace. Add `Shipping` to the configuration list to run both builds.
 
 The docking scenario opens two real windows, exercises all four dock edges, moves a two-panel group out and back, checks the original widget and its state, and checks one close per docked panel. The manual M5.1 guide also covers occupied return edges, a native group title-bar close, and injected transfer rollback. [M5.1 manual acceptance](WindowingPlugin_M5_1_Dock_Undock_Guide.md#6-live-acceptance-in-standalone-game)
+
+
+The `m52` scenario checks widget output and lookup identity, invalid open outputs, collapse state on horizontal and vertical edges, event counts, restoration of docked preferences after transfer, and null lookup after close. The [M5.2 Editor test guide](WindowingPlugin_M5_2_Editor_Test_Guide.md) covers visible sizing, repaint, Settings, Rename, and native maximize.
+
+The M5.1 and M5.2 scenarios passed in UE 5.8 Win64 Development Editor Standalone against the M5.2 source. Packaged M5 runs remain part of the final regression gate.

@@ -16,6 +16,7 @@ class FWpNativeWindowHost;
 class UWpDockWorkspace;
 struct FWpWindowRuntimeEntry;
 struct FWpDockGroup;
+struct FWpDockFrame;
 
 class FWpWindowLifetimeService final : public FGCObject
 {
@@ -44,6 +45,11 @@ public:
 
 	void AddReferencedObjects(FReferenceCollector& Collector) override;
 	FString GetReferencerName() const override;
+
+	UUserWidget* GetWidgetFromHandle(const FGuid& SessionId, FWpWindowHandle Handle) const;
+
+	FWpWindowResult RenameDockGroup(const FGuid& SessionId, FGuid GroupId, const FText& Title);
+	FWpWindowResult SetWindowCollapsed(const FGuid& SessionId, FWpWindowHandle Handle, bool bCollapsed);
 
 private:
 	struct FCallbackTarget
@@ -96,4 +102,11 @@ private:
 	double PlacementFlushAt = 0.0;
 	bool bPlacementLoaded = false;
 	bool bPlacementWritesEnabled = false;
+
+	FWpDockFrame BuildPanelFrame(const FGuid& SessionId, FWpWindowHandle Handle,
+	const TSharedRef<SWidget>& Content, bool bIndividualHost);
+	FWpDockFrame BuildGroupFrame(const FGuid& SessionId, FGuid GroupId,
+		const TSharedRef<SWidget>& Content);
+	void ShowGroupRename(const FGuid& SessionId, FGuid GroupId);
+	void ApplyDockPanelCollapse(FWpWindowRuntimeEntry& Entry, bool bCollapsed);
 };

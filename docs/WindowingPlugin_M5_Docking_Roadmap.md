@@ -2,9 +2,9 @@
 
 M5 lets a host move an existing WindowingPlugin widget between its own native Windows window and a dock in the game viewport. A docked panel can collapse to its header, expand, and resize by dragging a divider. A panel keeps its handle, widget instance, and placement key while it moves between hosts.
 
-## API follow-up — return and look up the created widget
+## Widget access delivered in M5.2
 
-`OpenWidgetWindow` creates the `UUserWidget` internally and currently returns only an `FWpWindowHandle`. That prevents a Blueprint caller from keeping the exact created widget reference or setting instance-specific values after opening it. Add a Blueprint-callable `GetWidgetFromHandle` lookup and an output widget reference on `OpenWidgetWindow` (or an equivalent create-and-open result). The lookup must return the existing widget instance for a live handle, preserve identity across dock and undock, and return null for an invalid, stale, or closed handle. Update C++ and Blueprint examples to show opening a window, storing both outputs, then setting a widget variable through the returned reference. This API is required for normal caller workflows and should be scheduled before the plugin is treated as complete.
+**Open Panel Window** creates the widget and returns its handle and the live widget, typed from the chosen Blueprint class. **Get Widget From Handle** returns the base widget reference for a live handle in the current session. The same instance remains available through dock and undock. Closed or invalid handles return null.
 
 The managed header has **Close**, **Collapse/Expand**, and **Settings**. Settings supplies actions for the current panel or group and its attachment. Left and right dockers start with vertical panel layouts. Top and bottom dockers start with horizontal panel layouts. A docker group can float as one native window. The design specifies corner ownership, nested splits, and how to extend Settings. [Docking interaction design](WindowingPlugin_M5_Docking_Interaction_Design.md)
 
@@ -16,7 +16,7 @@ Follow the file-by-file guide for the Blueprint API, workspace, transfer sequenc
 
 ### M5.1 layout limitation to resolve
 
-The initial Blueprint workspace uses a fixed nested box hierarchy. A top dock and bottom dock each add their native content host to horizontal boxes. When those rows have no constrained height and the child widgets request large desired sizes, Slate can allocate more height than the viewport and push the bottom row off-screen. The M5.1 guide should treat top-plus-bottom docking as a layout verification case, and the layout must be corrected before the docking experience is considered complete. Give the center region the flexible fill space, constrain dock row heights, and define sensible minimum and maximum dock sizes. For robust resizing and corner ownership, implement the region layout with explicit sizing in M5.3 rather than relying on content desired size in nested boxes.
+The initial Blueprint workspace uses a fixed nested box hierarchy. A top dock and bottom dock each add their native content host to horizontal boxes. When those rows have no constrained height and the child widgets request large desired sizes, Slate can allocate more height than the viewport and push the bottom row off-screen. M5.3.1 owns the top-plus-bottom overflow fix and its verification. Give the center region the flexible fill space, constrain dock row heights, and define sensible minimum and maximum dock sizes. For robust resizing and corner ownership, implement the region layout with explicit sizing in M5.3 rather than relying on content desired size in nested boxes.
 
 1. Add a runtime UMG dock workspace that the host adds to its viewport. Register it with `UWpWindowingSubsystem` and keep a weak reference scoped to its GameInstance. Put the main content between the dock edges so the workspace can measure and protect its usable area.
 2. Add a presentation mode to the runtime entry with `Floating` and `Docked` values. Keep it separate from the existing lifecycle state. An open panel remains open in either mode. Store its dock edge and order while docked, and remember its last floating geometry for undock.
@@ -34,7 +34,7 @@ Then add a group ID and ordered child layout. Transfer the entire group between 
 
 ## M5.2 — Add collapse and expand
 
-Next milestone. The implementation guide includes widget access, reusable headers, and the collapse API. [M5.2 headers, collapse, and Settings guide](WindowingPlugin_M5_2_Headers_Collapse_Settings_Guide.md)
+Implemented. The implementation guide covers widget access, managed headers, collapse, built-in context menus, and group Rename. [M5.2 headers, collapse, and Settings guide](WindowingPlugin_M5_2_Headers_Collapse_Settings_Guide.md)
 
 1. Give every panel and group header exactly three controls for Close, Collapse/Expand, and Settings. Generate Settings from attachment and capabilities and add Rename for groups. Collapse hides the relevant content area and retains its widget instances. Set the body to Slate/UMG collapsed visibility so it consumes no layout space or input. Keep the header visible and focusable.
 2. Add `SetWindowCollapsed(Handle, bCollapsed)` and include `bCollapsed` in the presentation snapshot. Accept collapse changes only for docked panels. Repeating the current value succeeds without an event. Undocking always shows the floating content. A later dock can restore that panel's last docked collapse preference.
@@ -42,16 +42,43 @@ Next milestone. The implementation guide includes widget access, reusable header
 
 **Exit check.** Type into A, collapse it, and type again with its header focused. The hidden field must retain the original text. Expand A and verify its content and previous size return. Undock while collapsed and verify the floating body is visible. Collapse and expand must leave B and the lifecycle event counts unchanged.
 
-## M5.3 — Add dock resizing
+## M5.3 — Layout and resizing
 
-Replace the initial fixed box layout with a workspace layout that can assign each corner to either neighboring edge. Implement **Expand Right** for the top docker using that resolver before wiring its Settings action. Reuse the layout calculation during splitter changes and when a group undocks.
+Implement one stage at a time. Each stage starts from the previous stage's working checkout and ends with a build and an acceptance check.
 
-1. Use a vertical splitter for the top dock, middle row, and bottom dock. Within the middle row, use a horizontal splitter for the left dock, center, and right dock. Each dock uses a splitter along its own panel axis. A runtime Slate `SSplitter` wrapped by the dock workspace can supply drag capture and layout. Use Slate units for dock sizes and leave native screen coordinates to M2.
-2. Store a preferred width for left and right docks and a preferred height for top and bottom docks. Store each panel's preferred expanded extent along its dock's panel axis. Track the effective size separately, since the viewport and neighboring panels can constrain it. Reserve the main content minimum first, then header space and expanded panel minimums. Scroll along the panel axis when those minimums exceed the available space.
-3. Exclude collapsed bodies from resize allocation. Hide dividers that have no expanded neighbor to resize. During a drag, clamp the split to the available space and the minimum size on each side. Cancel capture if a participant closes, collapses, undocks, or its workspace is removed. Recompute when the viewport size changes.
-4. Keep preferred dock sizes and collapse state for the live session. If cross-launch dock layout restore is added, store it in a separate versioned workspace layout keyed by the existing placement profile and panel key. Preserve M2's floating placement file and defaults.
+| Stage | Deliverable | Exit check |
+|---|---|---|
+| **M5.3.1 — Bounded workspace layout** | Resolve the five viewport regions from the available space. Keep the default corner arrangement and the existing panel transfer model. | Dock Top and Bottom together, shrink Standalone, and verify that both docks and the usable center stay inside the viewport. Enlarge it and verify that preferred sizes return. |
+| **M5.3.2 — Resize dock edges** | Add draggable dividers at the edge/center boundaries. Store preferred extents separately from the effective clamped sizes. | Drag all four dividers. Verify size limits and cancel the drag if an edge disappears. |
+| **M5.3.3 — Corner ownership and Expand Right** | Allow each corner to be assigned to one neighboring edge. Wire **Expand Right** and its reverse into Top's Settings. | Give Top the top-right corner, confirm Right starts below it, and reverse the action. |
+| **M5.3.4 — Resize panels inside a group** | Resize the flat split, keep collapsed headers reachable, and scroll when panel minimums exceed the available space. | Resize two panels, collapse one, resize its neighbor, then expand it. Confirm the saved preference returns when space allows. |
+| **M5.3.5 — Nested splits and packaged regression** | Extend groups to a tree with horizontal and vertical splits. Transfer the whole tree between dock and native hosts. | Recreate the nested Right Docker, resize both axes, float and return it, and verify child order, handles, state, and geometry. |
 
-**Exit check.** Dock A and B on the same edge. Drag the edge divider and the divider between the panels. Verify both minimum sizes and the usable center area. Collapse A, resize B, then expand A. Verify that A keeps its preferred size when space allows and B remains usable. Shrink the game viewport and verify headers remain reachable, including in the scrolling stack.
+### M5.3.1 — Bounded workspace layout
+
+Create a workspace panel that arranges the four existing dock containers and center from explicit rectangles. Keep the four edge binding names and types used by `UWpDockWorkspace`. The first layout keeps left and right full height, with top and bottom in the central column. Keep the native widget host attachment path so viewport resizing leaves live panels attached.
+
+Implement a pure geometry resolver that takes viewport size, edge occupancy, preferred edge extents, and a center minimum in Slate units. Clamp the center reserve to the available space first. Allocate the rest to opposing occupied edges, reducing both proportionally when their preferences exceed that budget. Empty edges get zero extent. Clip each region to its allocated bounds. Test zero-sized viewports, opposing edges, empty edges, and a shrink/expand round trip.
+
+### M5.3.2 — Resize dock edges
+
+Add handles at the boundaries produced by the resolver. Capture the dragged edge, starting local pointer coordinate, and starting effective extent. Convert pointer movement to workspace-local Slate units and clamp it against the opposing edge and center reserve. Update the active edge's preferred extent. Release capture on mouse-up, capture loss, edge removal, group float, and workspace teardown. Preserve the preferences across viewport size changes and group float/return.
+
+### M5.3.3 — Corner ownership and Expand Right
+
+Extend the resolver with four independent corner assignments. Default each corner to its vertical edge. When the owner is absent, let the other occupied edge use the corner. Revalidate the Top group's attachment when executing **Expand Right** or its reverse. Change ownership without changing either edge's preferred size. Test both Top/Right arrangements and edge combinations for overlap.
+
+### M5.3.4 — Resize panels inside a group
+
+Build a divider between expanded participants in the current flat group. Store preferred expanded extents by panel handle. A collapsed header reserves its measured extent, and a group scrolls along its axis when minimums exceed the space. Preserve preferences during a whole-group transfer. Cancel an active drag if a participant closes, collapses, undocks, or loses capture.
+
+### M5.3.5 — Nested splits and packaged regression
+
+Represent layout nodes as panel leaves or ordered splits. Convert a flat group into one split on its current axis and reuse the panel size rules at each nested split. Retire empty branches when a panel leaves. Run the M5.1 and M5.2 scenarios, M5.3 geometry tests, and live layout checks in extracted Win64 Development and Shipping builds. Keep cross-launch workspace persistence and drag-to-dock outside this acceptance gate.
+
+### Format for each implementation guide
+
+Publish one guide per stage. Identify the starting commit or prerequisite and give exact target files and edit order. Provide the full contents of new files and complete replacement definitions for every existing function that changes. Include the required declarations, fields, includes, and module dependencies with their exact placement. For Blueprint changes, give the asset, hierarchy, settings, nodes, pins, and execution order. End with the build command, automated checks, and manual steps with expected results. Start with a guide for M5.3.1 against the committed M5.2 source.
 
 ## M5 acceptance and delivery order
 

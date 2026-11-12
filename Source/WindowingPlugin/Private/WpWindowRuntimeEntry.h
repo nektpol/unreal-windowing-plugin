@@ -3,6 +3,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "WpDockHeader.h"
 #include "WpPlacement.h"
 #include "WpWindowTypes.h"
 #include "UObject/WeakObjectPtr.h"
@@ -34,4 +35,10 @@ struct FWpWindowRuntimeEntry final
 	FWpWindowCreateOptions CreateOptions;
 	FGuid DockGroupId;
 	TSharedPtr<SBox> DockContentSlot;
+	bool bDockCollapsed = false;
+	FWpDockFrame DockFrame;
+	FWpDockFrame FloatingFrame;
+	TSharedPtr<SBox> FloatingContentSlot;
+	SHorizontalBox::FSlot* DockHorizontalSlot = nullptr;
+	SVerticalBox::FSlot* DockVerticalSlot = nullptr;
 };

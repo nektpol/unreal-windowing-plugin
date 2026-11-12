@@ -38,6 +38,15 @@ public:
 		APlayerController* OwningPlayer,
 		FWpWindowHandle& OutHandle);
 
+	UFUNCTION(BlueprintPure, Category="Windowing")
+	UUserWidget* GetWidgetFromHandle(FWpWindowHandle Handle) const;
+
+	UFUNCTION(BlueprintCallable, Category="Windowing",
+		meta=(DisplayName="Open Panel Window", DeterminesOutputType="WidgetClass", DynamicOutputParam="OutWidget"))
+	FWpWindowResult OpenWidgetWindowWithWidget(
+		TSubclassOf<UUserWidget> WidgetClass, const FWpWindowCreateOptions& Options,
+		APlayerController* OwningPlayer, FWpWindowHandle& OutHandle, UUserWidget*& OutWidget);
+
 	UFUNCTION(BlueprintCallable, Category="Windowing")
 	FWpWindowResult RequestCloseWindow(FWpWindowHandle Handle);
 
@@ -85,6 +94,9 @@ public:
 
 	UPROPERTY(BlueprintAssignable, Category="Windowing")
 	FWpOnWindowPresentationChanged OnWindowPresentationChanged;
+
+	UFUNCTION(BlueprintCallable, Category="Windowing")
+	FWpWindowResult SetWindowCollapsed(FWpWindowHandle Handle, bool bCollapsed);
 
 private:
 	friend class FWpWindowLifetimeService;

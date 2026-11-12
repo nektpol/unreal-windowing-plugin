@@ -137,4 +137,7 @@ struct WINDOWINGPLUGIN_API FWpWindowPresentation
 
     UPROPERTY(BlueprintReadOnly, Category="Windowing")
     EWpDockSide Side = EWpDockSide::Left;
+
+    UPROPERTY(BlueprintReadOnly, Category="Windowing")
+    bool bCollapsed = false;
 };

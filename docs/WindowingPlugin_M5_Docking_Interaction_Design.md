@@ -39,8 +39,8 @@ On selection, resolve the target again from its ID and rebuild the context. Vali
 ## Implementation order
 
 1. **M5.1 — Transfer.** Finish the existing panel transfer foundation. Add group IDs and the flat ordered child model. Add a group-level transfer between one viewport edge and one native host. Treat the whole group transfer as one operation and keep its old host usable if creating the destination fails.
-2. **M5.2 — Headers and Settings.** Add the three controls, collapse and expand, the command registry, and Rename. Route all docking and undocking choices through the context menu in the user-facing workspace. The test harness can still call the underlying operations directly.
-3. **M5.3 — Layout and resizing.** Add the corner ownership resolver, Expand Right and its reverse, group and panel dividers, and the nested layout shown in the floating Right Docker. Keep floating group placement separate from viewport geometry.
+2. **M5.2 — Headers and Settings.** Add the three controls, collapse and expand, built-in context menus, and Rename. The host-extensible command registry remains a design extension. Route all docking and undocking choices through the context menu in the user-facing workspace. The test harness can still call the underlying operations directly.
+3. **M5.3 — Layout and resizing.** Add the corner ownership resolver, Expand Right and its reverse, group and panel dividers, and the nested layout shown in the floating Right Docker. Keep floating group placement separate from viewport geometry. Follow the staged delivery order in the [docking roadmap](WindowingPlugin_M5_Docking_Roadmap.md#m53--layout-and-resizing).
 
 ## Live acceptance
 

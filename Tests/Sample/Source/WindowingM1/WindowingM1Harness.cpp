@@ -190,6 +190,7 @@ void UWindowingM1GameInstance::OnClosed(FWpWindowClosedEvent Event)
 bool UWindowingM1GameInstance::TickTests(float)
 {
     if (Scenario == TEXT("m51")) { return TickDockingTest(); }
+    if (Scenario == TEXT("m52")) { return TickCollapseTest(); }
     if (Phase == EPhase::Start)
     {
         Deadline = FPlatformTime::Seconds() + 60.0;
@@ -564,6 +565,104 @@ bool UWindowingM1GameInstance::TickDockingTest()
         Finish();
         return false;
     }
+    if (!Failures.IsEmpty())
+    {
+        Finish();
+        return false;
+    }
+    return true;
+}
+void UWindowingM1GameInstance::OnPresentationChanged(FWpWindowHandle, FWpWindowPresentation)
+{
+    ++PresentationChanges;
+}
+
+bool UWindowingM1GameInstance::TickCollapseTest()
+{
+    UWpWindowingSubsystem* Subsystem = GetSubsystem<UWpWindowingSubsystem>();
+    if (Phase == EPhase::Start)
+    {
+        Deadline = FPlatformTime::Seconds() + 20.0;
+        auto* Workspace = CreateWidget<UWindowingM51Workspace>(this);
+        Workspace->AddToViewport();
+        if (!Expect(Subsystem->RegisterDockWorkspace(Workspace).IsSuccess(), TEXT("Register workspace")))
+        {
+            Finish();
+            return false;
+        }
+        Subsystem->OnWindowOpened.AddDynamic(this, &ThisClass::OnOpened);
+        Subsystem->OnWindowClosed.AddDynamic(this, &ThisClass::OnClosed);
+        Subsystem->OnWindowPresentationChanged.AddDynamic(this, &ThisClass::OnPresentationChanged);
+
+        FWpWindowCreateOptions Options;
+        UUserWidget* Created = nullptr;
+        const auto FailedOpen = Subsystem->OpenWidgetWindowWithWidget(nullptr, Options, nullptr, A, Created);
+        Expect(FailedOpen.Code == EWpWindowResultCode::InvalidWidgetClass && !A.IsValid() && !Created,
+            TEXT("Failed open must leave both outputs empty"));
+
+        Options.Title = FText::FromString(TEXT("M52 A"));
+        const auto Result = Subsystem->OpenWidgetWindowWithWidget(
+            UWindowingM1Widget::StaticClass(), Options, nullptr, A, Created);
+        auto* Panel = Cast<UWindowingM1Widget>(Created);
+        if (!Expect(Result.IsSuccess() && Panel && Panel == Subsystem->GetWidgetFromHandle(A),
+            TEXT("Open and lookup must return the exact created widget")))
+        {
+            Finish();
+            return false;
+        }
+        Panel->Clicks = 52;
+        B = Open(Subsystem, TEXT("M52 B"));
+
+        const auto IsCollapsed = [Subsystem](FWpWindowHandle Handle)
+        {
+            return Subsystem->GetWindowPresentation(Handle).bCollapsed;
+        };
+        for (const EWpDockSide Side : {EWpDockSide::Top, EWpDockSide::Right})
+        {
+            const int32 Before = PresentationChanges;
+            Expect(Subsystem->SetWindowCollapsed(A, true).Code == EWpWindowResultCode::InvalidState &&
+                !IsCollapsed(A) && PresentationChanges == Before,
+                TEXT("Individually floating panel rejects collapse without publishing an event"));
+            Expect(Subsystem->DockWindow(A, Side).IsSuccess() &&
+                Subsystem->DockWindow(B, Side).IsSuccess(), TEXT("Dock both panels on the test edge"));
+            const int32 BeforeCollapse = PresentationChanges;
+            Expect(Subsystem->SetWindowCollapsed(A, true).IsSuccess() && IsCollapsed(A) &&
+                !IsCollapsed(B) && PresentationChanges == BeforeCollapse + 1,
+                TEXT("Collapse affects only A and publishes exactly one event"));
+            Expect(Subsystem->SetWindowCollapsed(A, true).IsSuccess() &&
+                PresentationChanges == BeforeCollapse + 1, TEXT("Repeated collapse is a no-op"));
+
+            const FGuid Group = Subsystem->GetWindowPresentation(A).GroupId;
+            Expect(Subsystem->UndockGroup(Group).IsSuccess() && !IsCollapsed(A) &&
+                Subsystem->GetWindowPresentation(A).Mode == EWpWindowPresentationMode::InFloatingGroup,
+                TEXT("Floating a group shows its child bodies"));
+            Expect(Subsystem->DockGroup(Group).IsSuccess() && IsCollapsed(A) && !IsCollapsed(B),
+                TEXT("Returning a group restores the docked collapse preference"));
+            Expect(Subsystem->UndockWindow(A).IsSuccess() && !IsCollapsed(A) &&
+                Subsystem->GetWidgetFromHandle(A) == Panel && Panel->Clicks == 52,
+                TEXT("Undocking shows the original widget with its state intact"));
+            Expect(Subsystem->DockWindow(A, Side).IsSuccess() && IsCollapsed(A),
+                TEXT("Redocking the panel restores its collapse preference"));
+            const int32 BeforeExpand = PresentationChanges;
+            Expect(Subsystem->SetWindowCollapsed(A, false).IsSuccess() && !IsCollapsed(A) &&
+                PresentationChanges == BeforeExpand + 1, TEXT("Expand publishes exactly one event"));
+            Expect(Subsystem->UndockWindow(A).IsSuccess() && Subsystem->UndockWindow(B).IsSuccess(),
+                TEXT("Release both panels before testing the next axis"));
+        }
+        Expect(Opened.Num() == 2 && Closed.IsEmpty() && Panel == Subsystem->GetWidgetFromHandle(A),
+            TEXT("Transfers and collapse leave logical lifetime and widget identity intact"));
+        Close(A);
+        Close(B);
+        Phase = EPhase::InitialCloses;
+    }
+    else if (Closed.Num() == 2 || FPlatformTime::Seconds() > Deadline)
+    {
+        Expect(Closed.Num() == 2 && !Subsystem->GetWidgetFromHandle(A) && !Subsystem->GetWidgetFromHandle(B),
+            TEXT("Each panel closes once and retired widget lookups return null"));
+        Finish();
+        return false;
+    }
+
     if (!Failures.IsEmpty())
     {
         Finish();

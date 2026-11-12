@@ -6,6 +6,8 @@
 #include "Widgets/SWindow.h"
 #include "WpWindowTypes.h"
 
+class SBorder;
+
 class FWpNativeWindowHost final
 {
 public:
@@ -20,6 +22,7 @@ public:
 	void ReleaseResources();
 	void* GetNativeHandle() const;
 	void MaximizeWindow();
+	bool IsMaximized() const;
 	void SetContent(const TSharedRef<SWidget>& Content);
 
 	bool IsSlateWindow(const SWindow* Candidate) const
@@ -31,4 +34,5 @@ public:
 
 private:
 	TSharedPtr<SWindow> Window;
+	TSharedPtr<SBorder> ContentBackground;
 };

@@ -1,6 +1,7 @@
 ﻿// Developed by Neko Creative Technologies
 
 #pragma once
+#include "WpDockHeader.h"
 #include "WpNativeWindowHost.h"
 #include "Components/NativeWidgetHost.h"
 #include "Widgets/SBoxPanel.h"
@@ -16,4 +17,5 @@ struct FWpDockGroup
 	TWeakObjectPtr<UNativeWidgetHost> Slot;
 	TUniquePtr<FWpNativeWindowHost> Host;
 	bool bNativeClosing = false;
+	FWpDockFrame Frame;
 };
