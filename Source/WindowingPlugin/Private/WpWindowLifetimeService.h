@@ -27,6 +27,7 @@ public:
 	FWpWindowResult SetTitle(const FGuid& SessionId, FWpWindowHandle Handle,
 		const FText& Title);
 	EWpWindowState GetState(const FGuid& SessionId, FWpWindowHandle Handle) const;
+	FWpWindowFocusSnapshot GetWindowFocus(const FGuid& SessionId) const;
 	void BeginSessionShutdown(const FGuid& SessionId);
 	void Shutdown();
 
@@ -47,6 +48,8 @@ private:
 	void Rollback(FGuid Id, FWpWindowRuntimeEntry& Entry);
 	void OnSlatePostTick(float DeltaTime);
 	void Drain();
+	void TickWindowFocus();
+	TMap<FGuid, TWeakObjectPtr<UWpWindowingSubsystem>> FocusObservers;
 
 	TMap<FGuid, TUniquePtr<FWpWindowRuntimeEntry>> Entries;
 	TSharedPtr<FCallbackTarget> CallbackTarget;

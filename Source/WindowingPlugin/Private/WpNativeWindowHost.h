@@ -1,4 +1,4 @@
-﻿// Developed by Neko Creative Technologies
+// Developed by Neko Creative Technologies
 
 #pragma once
 
@@ -20,6 +20,13 @@ public:
 	void ReleaseResources();
 	void* GetNativeHandle() const;
 	void MaximizeWindow();
+
+	bool IsSlateWindow(const SWindow* Candidate) const
+	{
+		return Candidate && Window.Get() == Candidate;
+	}
+
+	static void* GetForegroundHandle();
 
 private:
 	TSharedPtr<SWindow> Window;

@@ -14,6 +14,10 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(
 	FWpOnWindowOpened, FWpWindowHandle, Handle);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(
 	FWpOnWindowClosed, FWpWindowClosedEvent, Event);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(
+	FWpOnWindowFocusChanged,
+	FWpWindowFocusSnapshot, Previous,
+	FWpWindowFocusSnapshot, Current);
 
 UCLASS()
 class WINDOWINGPLUGIN_API UWpWindowingSubsystem : public UGameInstanceSubsystem
@@ -48,6 +52,12 @@ public:
 	UPROPERTY(BlueprintAssignable, Category="Windowing")
 	FWpOnWindowClosed OnWindowClosed;
 
+	UFUNCTION(BlueprintPure, Category="Windowing")
+	FWpWindowFocusSnapshot GetWindowFocus() const;
+
+	UPROPERTY(BlueprintAssignable, Category="Windowing")
+	FWpOnWindowFocusChanged OnWindowFocusChanged;
+
 private:
 	friend class FWpWindowLifetimeService;
 
@@ -56,4 +66,6 @@ private:
 
 	void NotifyOpened(FWpWindowHandle Handle);
 	void NotifyClosed(const FWpWindowClosedEvent& Event);
+	void NotifyFocusChanged(const FWpWindowFocusSnapshot& Current);
+	FWpWindowFocusSnapshot LastReportedFocus;
 };

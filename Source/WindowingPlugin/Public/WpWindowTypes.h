@@ -89,3 +89,15 @@ struct WINDOWINGPLUGIN_API FWpWindowClosedEvent
     UPROPERTY(BlueprintReadOnly, Category="Windowing")
     EWpWindowCloseReason Reason = EWpWindowCloseReason::Unknown;
 };
+
+USTRUCT(BlueprintType)
+struct WINDOWINGPLUGIN_API FWpWindowFocusSnapshot
+{
+    GENERATED_BODY()
+
+    UPROPERTY(BlueprintReadOnly, Category="Windowing")
+    FWpWindowHandle ActiveWindow;
+
+    UPROPERTY(BlueprintReadOnly, Category="Windowing")
+    bool bHasKeyboardFocus = false;
+};

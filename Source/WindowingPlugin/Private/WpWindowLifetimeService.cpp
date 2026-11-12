@@ -248,6 +248,7 @@ FWpWindowResult FWpWindowLifetimeService::CreateWindow(const FGuid& SessionId,
     Entry.Record->bOpenedEventEmitted = true;
     CapturePlacement(Entry);
     OutHandle.Id = Id;
+    FocusObservers.Add(RequestSession, WeakSink);
     WeakSink.Get()->NotifyOpened(OutHandle);
     return Result(EWpWindowResultCode::Success);
 }
@@ -346,10 +347,72 @@ EWpWindowState FWpWindowLifetimeService::GetState(const FGuid& SessionId,
     return Entry ? Entry->Record->State : EWpWindowState::Invalid;
 }
 
+FWpWindowFocusSnapshot FWpWindowLifetimeService::GetWindowFocus(const FGuid& SessionId) const
+{
+    FWpWindowFocusSnapshot Result;
+    if (bShuttingDown || !SessionId.IsValid() || IsEngineExitRequested() ||
+        !FSlateApplication::IsInitialized())
+    {
+        return Result;
+    }
+
+    const void* Foreground = FWpNativeWindowHost::GetForegroundHandle();
+    if (!Foreground)
+    {
+        return Result;
+    }
+
+    for (const auto& Pair : Entries)
+    {
+        const FWpWindowRuntimeEntry& Entry = *Pair.Value;
+        if (Entry.Record->SessionId != SessionId ||
+            Entry.Record->State != EWpWindowState::Open || !Entry.Host ||
+            Entry.Host->GetNativeHandle() != Foreground)
+        {
+            continue;
+        }
+
+        Result.ActiveWindow.Id = Pair.Key;
+        FSlateApplication& Slate = FSlateApplication::Get();
+        if (const TSharedPtr<SWidget> Focused = Slate.GetKeyboardFocusedWidget())
+        {
+            const TSharedPtr<SWindow> FocusedWindow = Slate.FindWidgetWindow(Focused.ToSharedRef());
+            Result.bHasKeyboardFocus = Entry.Host->IsSlateWindow(FocusedWindow.Get());
+        }
+        break;
+    }
+    return Result;
+}
+
+void FWpWindowLifetimeService::TickWindowFocus()
+{
+    if (OperationDepth != 0 || bShuttingDown || IsEngineExitRequested() || FocusObservers.IsEmpty())
+    {
+        return;
+    }
+
+    TGuardValue<int32> Operation(OperationDepth, OperationDepth + 1);
+    TArray<FGuid> Sessions;
+    FocusObservers.GenerateKeyArray(Sessions);
+    for (const FGuid& Session : Sessions)
+    {
+        const TWeakObjectPtr<UWpWindowingSubsystem>* Found = FocusObservers.Find(Session);
+        if (UWpWindowingSubsystem* Sink = Found ? Found->Get() : nullptr)
+        {
+            Sink->NotifyFocusChanged(GetWindowFocus(Session));
+        }
+        else
+        {
+            FocusObservers.Remove(Session);
+        }
+    }
+}
+
 void FWpWindowLifetimeService::OnSlatePostTick(float)
 {
     Drain();
     TickPlacements();
+    TickWindowFocus();
 }
 
 void FWpWindowLifetimeService::Drain()
@@ -403,6 +466,7 @@ void FWpWindowLifetimeService::Drain()
 void FWpWindowLifetimeService::BeginSessionShutdown(const FGuid& SessionId)
 {
     check(IsInGameThread());
+    FocusObservers.Remove(SessionId);
     if (bShuttingDown)
     {
         return;
@@ -432,6 +496,7 @@ void FWpWindowLifetimeService::Shutdown()
         UE_LOG(LogTemp, Fatal, TEXT("WindowingPlugin reached shutdown at an unsafe lifetime boundary."));
     }
     bShuttingDown = true;
+    FocusObservers.Reset();
 
     {
         TGuardValue<int32> Operation(OperationDepth, OperationDepth + 1);

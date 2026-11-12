@@ -1,11 +1,14 @@
-﻿
-
+﻿// Developed by Neko Creative Technologies
 
 #include "WpNativeWindowHost.h"
 
 #include "Framework/Application/SlateApplication.h"
 #include "GenericPlatform/GenericWindow.h"
 #include "Widgets/SNullWidget.h"
+
+#if PLATFORM_WINDOWS
+#include "Windows/WindowsHWrapper.h"
+#endif
 
 void FWpNativeWindowHost::Construct(const FWpWindowCreateOptions& Options,
     const TSharedRef<SWidget>& Content, const FOnWindowClosed& PreClose)
@@ -82,4 +85,13 @@ void FWpNativeWindowHost::ReleaseResources()
         Window->SetContent(SNullWidget::NullWidget);
         Window.Reset();
     }
+}
+
+void* FWpNativeWindowHost::GetForegroundHandle()
+{
+#if PLATFORM_WINDOWS
+    return ::GetForegroundWindow();
+#else
+    return nullptr;
+#endif
 }

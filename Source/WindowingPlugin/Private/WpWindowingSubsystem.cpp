@@ -39,6 +39,7 @@ void UWpWindowingSubsystem::Initialize(FSubsystemCollectionBase& Collection)
 	Super::Initialize(Collection);
 	SessionId = FGuid::NewGuid();
 	bDeinitializing = false;
+	LastReportedFocus = {};
 }
 
 void UWpWindowingSubsystem::Deinitialize()
@@ -172,4 +173,30 @@ void UWpWindowingSubsystem::NotifyClosed(const FWpWindowClosedEvent& Event)
 	{
 		OnWindowClosed.Broadcast(Event);
 	}
+}
+
+FWpWindowFocusSnapshot UWpWindowingSubsystem::GetWindowFocus() const
+{
+	if (IsInGameThread() && !bDeinitializing && SessionId.IsValid() && !IsEngineExitRequested())
+	{
+		if (const FWpWindowLifetimeService* Service = WpGetWindowLifetimeService())
+		{
+			return Service->GetWindowFocus(SessionId);
+		}
+	}
+	return {};
+}
+
+void UWpWindowingSubsystem::NotifyFocusChanged(const FWpWindowFocusSnapshot& Current)
+{
+	if (bDeinitializing || IsEngineExitRequested() ||
+		(LastReportedFocus.ActiveWindow.Id == Current.ActiveWindow.Id &&
+			LastReportedFocus.bHasKeyboardFocus == Current.bHasKeyboardFocus))
+	{
+		return;
+	}
+
+	const FWpWindowFocusSnapshot Previous = LastReportedFocus;
+	LastReportedFocus = Current;
+	OnWindowFocusChanged.Broadcast(Previous, Current);
 }

@@ -214,6 +214,8 @@ These code blocks compiled and linked against the M2 source in a disposable UE 5
 
 ## 3. Test with real windows in Unreal Editor
 
+The M3 live check was confirmed by the user. The packaged release checks are part of M4. [M4 release acceptance test](WindowingPlugin_M4_Guide.md#4-final-release-acceptance-test)
+
 Build **Win64 Development Editor**, then open the existing **WBP_WindowingControl**. Use the existing Open A and Open B buttons and the editable text boxes in **WBP_WindowingSmokeTest**. If both buttons use placement keys, give them different keys.
 
 1. Add two Text Blocks to the main panel and enable **Is Variable** for each. Name them `FocusStatus` and `FocusChanges`. Add an Integer Blueprint variable named `FocusChangeCount`, defaulted to zero.
