@@ -1,8 +1,9 @@
-﻿// Developed by Neko Creative Technologies
+// Developed by Neko Creative Technologies
 
 #pragma once
 
 #include "CoreMinimal.h"
+#include "WpPlacement.h"
 #include "UObject/GCObject.h"
 #include "WpWindowTypes.h"
 
@@ -53,4 +54,17 @@ private:
 	FDelegateHandle PreShutdownHandle;
 	int32 OperationDepth = 0;
 	bool bShuttingDown = false;
+
+	void LoadPlacements();
+	void CapturePlacement(FWpWindowRuntimeEntry& Entry);
+	void TickPlacements();
+	void FlushPlacements();
+
+	FWpPlacementMap SavedPlacements;
+	FWpPlacementMap DirtyPlacements;
+	TOptional<FString> PlacementTopology;
+	double NextPlacementSample = 0.0;
+	double PlacementFlushAt = 0.0;
+	bool bPlacementLoaded = false;
+	bool bPlacementWritesEnabled = false;
 };

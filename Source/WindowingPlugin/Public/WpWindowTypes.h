@@ -1,4 +1,4 @@
-﻿// Developed by Neko Creative Technologies
+// Developed by Neko Creative Technologies
 
 #pragma once
 
@@ -36,7 +36,8 @@ enum class EWpWindowResultCode : uint8
     InvalidSize, WidgetCreationFailed,
     SlateUnavailable, UnsupportedPlatform, WrongThread,
     ShuttingDown, NativeCreationFailed, NotFound,
-    InvalidState, AlreadyClosing, InternalError
+    InvalidState, AlreadyClosing, InternalError,
+    InvalidPlacementIdentity, DuplicatePlacementIdentity
 };
 
 USTRUCT(BlueprintType)
@@ -66,6 +67,15 @@ struct WINDOWINGPLUGIN_API FWpWindowCreateOptions
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Windowing")
     FVector2D MinimumClientSize = FVector2D(320.0, 240.0);
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Windowing")
+    FString PlacementProfile = TEXT("Default");
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Windowing")
+    FString PlacementKey;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Windowing")
+    bool bRestorePlacement = true;
 };
 
 USTRUCT(BlueprintType)

@@ -10,7 +10,7 @@ public class WindowingPlugin : ModuleRules
 		PublicDependencyModuleNames.AddRange(
 			new string[]
 			{
-				"Core", "CoreUObject", "Engine", "UMG"
+				"Core", "CoreUObject", "Engine", "UMG",
 			}
 			);
 			
@@ -18,8 +18,13 @@ public class WindowingPlugin : ModuleRules
 		PrivateDependencyModuleNames.AddRange(
 			new string[]
 			{
-				"Slate", "SlateCore", "ApplicationCore"
+				"Slate", "SlateCore", "ApplicationCore","Json"
 			}
 			);
+
+		if (Target.Platform == UnrealTargetPlatform.Win64)
+		{
+			PublicSystemLibraries.Add("user32.lib");
+		}
 	}
 }

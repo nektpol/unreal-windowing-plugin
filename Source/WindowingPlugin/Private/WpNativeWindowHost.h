@@ -18,6 +18,8 @@ public:
 	bool IsTracked() const;
 	bool HasNativeHandle() const;
 	void ReleaseResources();
+	void* GetNativeHandle() const;
+	void MaximizeWindow();
 
 private:
 	TSharedPtr<SWindow> Window;

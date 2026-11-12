@@ -1,4 +1,4 @@
-﻿// Developed by Neko Creative Technologies
+// Developed by Neko Creative Technologies
 
 #include "WpWindowLifetimeService.h"
 
@@ -128,6 +128,27 @@ FWpWindowResult FWpWindowLifetimeService::CreateWindow(const FGuid& SessionId,
         return Result(EWpWindowResultCode::InvalidSize, TEXT("Use positive client sizes with minimum <= initial."));
     }
 
+    TOptional<FWpPlacementIdentity> PlacementId;
+    if (!Options.PlacementKey.IsEmpty())
+    {
+        FWpPlacementIdentity Identity{Options.PlacementProfile, Options.PlacementKey};
+        if (!WpPlacement::IsValidIdentity(Identity))
+        {
+            return Result(EWpWindowResultCode::InvalidPlacementIdentity, TEXT("Invalid placement profile or key."));
+        }
+        for (const auto& Pair : Entries)
+        {
+            const auto& Existing = Pair.Value->PlacementId;
+            if (Existing.IsSet() && Existing.GetValue() == Identity)
+            {
+                return Result(EWpWindowResultCode::DuplicatePlacementIdentity,
+                    TEXT("This placement identity already has a window."));
+            }
+        }
+        LoadPlacements();
+        PlacementId = MoveTemp(Identity);
+    }
+
     BindSlateHooks();
     TGuardValue<int32> Operation(OperationDepth, OperationDepth + 1);
     FGuid Id;
@@ -144,6 +165,8 @@ FWpWindowResult FWpWindowLifetimeService::CreateWindow(const FGuid& SessionId,
     Entry.Record->SessionId = RequestSession;
     Entry.Record->SessionOwner = Owner;
     Entry.EventSink = WeakSink;
+    Entry.PlacementId = MoveTemp(PlacementId);
+    Entry.PlacementMinimumClientSize = Options.MinimumClientSize;
     Entries.Add(Id, MoveTemp(NewEntry));
 
     const auto Fail = [this, Id, &Entry](EWpWindowResultCode Code, const TCHAR* Message)
@@ -180,10 +203,41 @@ FWpWindowResult FWpWindowLifetimeService::CreateWindow(const FGuid& SessionId,
             }
         }));
 
-    if (!Entry.Host->RegisterWindow() || !Entry.Host->ShowWindow() ||
-        Entry.Record->bNativeCloseObserved)
+    if (!Entry.Host->RegisterWindow())
+    {
+        return Fail(EWpWindowResultCode::NativeCreationFailed, TEXT("Native window registration failed."));
+    }
+    bool bRestoreMaximized = false;
+    if (Options.bRestorePlacement && Entry.PlacementId.IsSet())
+    {
+        if (const FWpPlacementSnapshot* Saved = SavedPlacements.Find(Entry.PlacementId.GetValue()))
+        {
+            const FWpPlacementSnapshot Snapshot = *Saved;
+            if (WpPlacement::Restore(Entry.Host->GetNativeHandle(), Snapshot, Options.MinimumClientSize))
+            {
+                bRestoreMaximized = Snapshot.bMaximized;
+            }
+            else
+            {
+                UE_LOG(LogTemp, Warning, TEXT("WindowingPlugin could not apply saved bounds."));
+            }
+        }
+    }
+    if (!Entry.Record->bNativeCloseObserved && Entry.PlacementId.IsSet())
+    {
+        Entry.bHasPlacement = WpPlacement::Capture(Entry.Host->GetNativeHandle(), Entry.Placement);
+    }
+    if (Entry.Record->bNativeCloseObserved || !Entry.Host->ShowWindow())
     {
         return Fail(EWpWindowResultCode::NativeCreationFailed, TEXT("Native window failed to open."));
+    }
+    if (bRestoreMaximized && !Entry.Record->bNativeCloseObserved)
+    {
+        Entry.Host->MaximizeWindow();
+    }
+    if (Entry.Record->bNativeCloseObserved)
+    {
+        return Fail(EWpWindowResultCode::NativeCreationFailed, TEXT("Native window closed while opening."));
     }
     if (!IsSessionActive())
     {
@@ -192,6 +246,7 @@ FWpWindowResult FWpWindowLifetimeService::CreateWindow(const FGuid& SessionId,
 
     Entry.Record->State = EWpWindowState::Open;
     Entry.Record->bOpenedEventEmitted = true;
+    CapturePlacement(Entry);
     OutHandle.Id = Id;
     WeakSink.Get()->NotifyOpened(OutHandle);
     return Result(EWpWindowResultCode::Success);
@@ -202,6 +257,7 @@ void FWpWindowLifetimeService::OnNativePreClose(FGuid Id)
     check(IsInGameThread());
     if (const TUniquePtr<FWpWindowRuntimeEntry>* Found = Entries.Find(Id))
     {
+        CapturePlacement(*(*Found));
         UWpWindowRecord& Record = *(*Found)->Record;
         Record.bNativeCloseObserved = true;
         if (Record.State == EWpWindowState::Creating || Record.State == EWpWindowState::Open)
@@ -293,6 +349,7 @@ EWpWindowState FWpWindowLifetimeService::GetState(const FGuid& SessionId,
 void FWpWindowLifetimeService::OnSlatePostTick(float)
 {
     Drain();
+    TickPlacements();
 }
 
 void FWpWindowLifetimeService::Drain()
@@ -335,6 +392,10 @@ void FWpWindowLifetimeService::Drain()
             }
         }
         Record.Widget = nullptr;
+        if (Entry.PlacementId.IsSet() && DirtyPlacements.Contains(Entry.PlacementId.GetValue()))
+        {
+            PlacementFlushAt = FPlatformTime::Seconds();
+        }
         Entries.Remove(Id);
     }
 }
@@ -382,6 +443,7 @@ void FWpWindowLifetimeService::Shutdown()
         }
     }
     Drain();
+    FlushPlacements();
     if (!Entries.IsEmpty())
     {
         UE_LOG(LogTemp, Fatal, TEXT("WindowingPlugin still owns windows after the terminal Slate drain."));
@@ -396,4 +458,143 @@ void FWpWindowLifetimeService::Shutdown()
     }
     PostTickHandle.Reset();
     PreShutdownHandle.Reset();
+}
+
+void FWpWindowLifetimeService::LoadPlacements()
+{
+    if (bPlacementLoaded)
+    {
+        return;
+    }
+    bPlacementLoaded = true;
+    const WpPlacement::ELoadResult State =
+        WpPlacement::Load(WpPlacement::DefaultPath(), SavedPlacements);
+    bPlacementWritesEnabled = State == WpPlacement::ELoadResult::Loaded ||
+        State == WpPlacement::ELoadResult::Missing;
+    if (!bPlacementWritesEnabled)
+    {
+        UE_LOG(LogTemp, Warning, TEXT("WindowingPlugin placement file could not be loaded (%d)."),
+            static_cast<int32>(State));
+    }
+}
+
+void FWpWindowLifetimeService::CapturePlacement(FWpWindowRuntimeEntry& Entry)
+{
+    if (!Entry.PlacementId.IsSet() || !Entry.Host || !Entry.Record->bOpenedEventEmitted)
+    {
+        return;
+    }
+
+    void* Handle = Entry.Host->GetNativeHandle();
+    FWpPlacementSnapshot Current = Entry.Placement;
+    if (!WpPlacement::Capture(Handle, Current) ||
+        (WpPlacement::IsNormal(Handle) &&
+            !WpPlacement::HasReachableTitleBar(Current.Normal, WpPlacement::ReadMonitors())))
+    {
+        return;
+    }
+    Entry.Placement = MoveTemp(Current);
+    Entry.bHasPlacement = true;
+    const FWpPlacementSnapshot* Previous = SavedPlacements.Find(Entry.PlacementId.GetValue());
+    if (!Previous || !(*Previous == Entry.Placement))
+    {
+        SavedPlacements.Add(Entry.PlacementId.GetValue(), Entry.Placement);
+        if (bPlacementWritesEnabled)
+        {
+            DirtyPlacements.Add(Entry.PlacementId.GetValue(), Entry.Placement);
+            PlacementFlushAt = FPlatformTime::Seconds() + 0.75;
+        }
+    }
+}
+
+void FWpWindowLifetimeService::FlushPlacements()
+{
+    if (DirtyPlacements.IsEmpty())
+    {
+        return;
+    }
+    if (WpPlacement::MergeAndSave(WpPlacement::DefaultPath(), DirtyPlacements))
+    {
+        DirtyPlacements.Reset();
+    }
+    else
+    {
+        UE_LOG(LogTemp, Warning, TEXT("WindowingPlugin could not save window placement."));
+        PlacementFlushAt = FPlatformTime::Seconds() + 5.0;
+    }
+}
+
+static FString GetPlacementTopology(TConstArrayView<FWpPlacementMonitor> Monitors)
+{
+    TArray<FString> Parts;
+    for (const FWpPlacementMonitor& Monitor : Monitors)
+    {
+        Parts.Add(FString::Printf(TEXT("%s|%d,%d,%d,%d|%d|%d"),
+            *Monitor.Id, Monitor.WorkArea.Min.X, Monitor.WorkArea.Min.Y,
+            Monitor.WorkArea.Max.X, Monitor.WorkArea.Max.Y, Monitor.Dpi, Monitor.bPrimary));
+    }
+    Parts.Sort();
+    return FString::Join(Parts, TEXT("\n"));
+}
+
+void FWpWindowLifetimeService::TickPlacements()
+{
+    if (OperationDepth != 0 || bShuttingDown)
+    {
+        return;
+    }
+
+    const double Now = FPlatformTime::Seconds();
+    if (bPlacementLoaded && Now >= NextPlacementSample)
+    {
+        NextPlacementSample = Now + 0.25;
+        const TArray<FWpPlacementMonitor> Monitors = WpPlacement::ReadMonitors();
+        const FString Topology = GetPlacementTopology(Monitors);
+        const bool bTopologyChanged = PlacementTopology.IsSet() && !Monitors.IsEmpty() &&
+            PlacementTopology.GetValue() != Topology;
+        if (!Monitors.IsEmpty())
+        {
+            PlacementTopology = Topology;
+        }
+
+        TGuardValue<int32> Operation(OperationDepth, OperationDepth + 1);
+        TArray<FGuid> Ids;
+        Entries.GenerateKeyArray(Ids);
+        for (const FGuid& Id : Ids)
+        {
+            const TUniquePtr<FWpWindowRuntimeEntry>* Found = Entries.Find(Id);
+            if (!Found || (*Found)->Record->State != EWpWindowState::Open ||
+                !(*Found)->PlacementId.IsSet() || !(*Found)->Host)
+            {
+                continue;
+            }
+            FWpWindowRuntimeEntry& Entry = *(*Found);
+            Entry.bRecoverPlacement |= bTopologyChanged;
+            if (Entry.bRecoverPlacement && Entry.bHasPlacement)
+            {
+                void* Handle = Entry.Host->GetNativeHandle();
+                if (!WpPlacement::IsNormal(Handle) || Monitors.IsEmpty())
+                {
+                    continue;
+                }
+                Entry.bRecoverPlacement = false;
+                FWpPlacementSnapshot Current = Entry.Placement;
+                if (WpPlacement::Capture(Handle, Current) &&
+                    !WpPlacement::HasReachableTitleBar(Current.Normal, Monitors))
+                {
+                    if (!WpPlacement::Restore(Handle, Entry.Placement, Entry.PlacementMinimumClientSize))
+                    {
+                        UE_LOG(LogTemp, Warning, TEXT("WindowingPlugin could not recover window placement."));
+                    }
+                    // SetWindowPos can run callbacks. Sample the settled rectangle on the next tick.
+                    continue;
+                }
+            }
+            CapturePlacement(Entry);
+        }
+    }
+    if (!DirtyPlacements.IsEmpty() && Now >= PlacementFlushAt)
+    {
+        FlushPlacements();
+    }
 }

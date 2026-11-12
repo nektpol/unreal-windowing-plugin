@@ -3,6 +3,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "WpPlacement.h"
 #include "UObject/WeakObjectPtr.h"
 
 class UWpWindowRecord;
@@ -21,4 +22,9 @@ struct FWpWindowRuntimeEntry final
 	TUniquePtr<FWpNativeWindowHost> Host;
 	TWeakObjectPtr<UWpWindowingSubsystem> EventSink;
 	bool bFailedCreation = false;
+	TOptional<FWpPlacementIdentity> PlacementId;
+	FWpPlacementSnapshot Placement;
+	FVector2D PlacementMinimumClientSize = FVector2D::ZeroVector;
+	bool bHasPlacement = false;
+	bool bRecoverPlacement = false;
 };

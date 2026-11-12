@@ -56,9 +56,21 @@ bool FWpNativeWindowHost::IsTracked() const
 
 bool FWpNativeWindowHost::HasNativeHandle() const
 {
-    const TSharedPtr<FGenericWindow> Native =
-        Window.IsValid() ? Window->GetNativeWindow() : nullptr;
-    return Native.IsValid() && Native->GetOSWindowHandle() != nullptr;
+    return GetNativeHandle() != nullptr;
+}
+
+void* FWpNativeWindowHost::GetNativeHandle() const
+{
+    const TSharedPtr<FGenericWindow> Native = Window ? Window->GetNativeWindow() : nullptr;
+    return Native ? Native->GetOSWindowHandle() : nullptr;
+}
+
+void FWpNativeWindowHost::MaximizeWindow()
+{
+    if (IsTracked() && HasNativeHandle())
+    {
+        Window->Maximize();
+    }
 }
 
 void FWpNativeWindowHost::ReleaseResources()
