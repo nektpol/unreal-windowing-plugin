@@ -3,8 +3,8 @@
 #pragma once
 
 #include "CoreMinimal.h"
-#include "WpDockHeader.h"
-#include "WpPlacement.h"
+#include "Presentation/WpDockHeader.h"
+#include "Placement/WpPlacement.h"
 #include "WpWindowTypes.h"
 #include "UObject/WeakObjectPtr.h"
 

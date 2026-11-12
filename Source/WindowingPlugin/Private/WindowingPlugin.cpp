@@ -1,7 +1,7 @@
 // Developed by Neko Creative Technologies
 
 #include "WindowingPlugin.h"
-#include "WpWindowLifetimeService.h"
+#include "Lifecycle/WpWindowLifetimeService.h"
 
 FWindowingPluginModule::FWindowingPluginModule() = default;
 FWindowingPluginModule::~FWindowingPluginModule() = default;

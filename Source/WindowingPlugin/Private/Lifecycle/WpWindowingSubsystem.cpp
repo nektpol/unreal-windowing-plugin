@@ -4,7 +4,7 @@
 #include "Engine/GameInstance.h"
 #include "GameFramework/PlayerController.h"
 #include "WindowingPlugin.h"
-#include "WpWindowLifetimeService.h"
+#include "Lifecycle/WpWindowLifetimeService.h"
 #include "WpDockWorkspace.h"
 
 static FWpWindowLifetimeService* WpGetWindowLifetimeService()

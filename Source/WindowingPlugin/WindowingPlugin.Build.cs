@@ -1,5 +1,6 @@
 // Copyright Epic Games, Inc. All Rights Reserved.
 
+using System.IO;
 using UnrealBuildTool;
 
 public class WindowingPlugin : ModuleRules
@@ -7,6 +8,7 @@ public class WindowingPlugin : ModuleRules
 	public WindowingPlugin(ReadOnlyTargetRules Target) : base(Target)
 	{
 		PCHUsage = ModuleRules.PCHUsageMode.UseExplicitOrSharedPCHs;
+		PrivateIncludePaths.Add(Path.Combine(ModuleDirectory, "Private"));
 		PublicDependencyModuleNames.AddRange(
 			new string[]
 			{

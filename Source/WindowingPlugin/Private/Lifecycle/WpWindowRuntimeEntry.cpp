@@ -1,6 +1,6 @@
 ﻿// Developed by Neko Creative Technologies
 
-#include "WpWindowRuntimeEntry.h"
-#include "WpNativeWindowHost.h"
+#include "Lifecycle/WpWindowRuntimeEntry.h"
+#include "Presentation/WpNativeWindowHost.h"
 
 FWpWindowRuntimeEntry::~FWpWindowRuntimeEntry() = default;

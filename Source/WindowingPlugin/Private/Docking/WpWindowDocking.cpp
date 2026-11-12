@@ -1,12 +1,12 @@
 // Developed by Neko Creative Technologies
 
-#include "WpWindowLifetimeService.h"
+#include "Lifecycle/WpWindowLifetimeService.h"
 
-#include "WpDockGroup.h"
+#include "Docking/WpDockGroup.h"
 #include "WpDockWorkspace.h"
 #include "WpWindowingSubsystem.h"
-#include "WpWindowRecord.h"
-#include "WpWindowRuntimeEntry.h"
+#include "Lifecycle/WpWindowRecord.h"
+#include "Lifecycle/WpWindowRuntimeEntry.h"
 #include "Templates/UnrealTemplate.h"
 #include "Widgets/Layout/SBox.h"
 #include "Widgets/SNullWidget.h"

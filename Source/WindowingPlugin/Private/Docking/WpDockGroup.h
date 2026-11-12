@@ -1,8 +1,8 @@
 ﻿// Developed by Neko Creative Technologies
 
 #pragma once
-#include "WpDockHeader.h"
-#include "WpNativeWindowHost.h"
+#include "Presentation/WpDockHeader.h"
+#include "Presentation/WpNativeWindowHost.h"
 #include "Components/NativeWidgetHost.h"
 #include "Widgets/SBoxPanel.h"
 

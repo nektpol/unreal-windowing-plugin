@@ -1,6 +1,6 @@
 // Developed by Neko Creative Technologies
 
-#include "WpWindowLifetimeService.h"
+#include "Lifecycle/WpWindowLifetimeService.h"
 
 #include "Blueprint/UserWidget.h"
 #include "Engine/GameInstance.h"
@@ -10,11 +10,11 @@
 #include "Templates/UnrealTemplate.h"
 #include "UObject/Package.h"
 #include "UObject/UObjectGlobals.h"
-#include "WpNativeWindowHost.h"
-#include "WpWindowRecord.h"
-#include "WpWindowRuntimeEntry.h"
+#include "Presentation/WpNativeWindowHost.h"
+#include "Lifecycle/WpWindowRecord.h"
+#include "Lifecycle/WpWindowRuntimeEntry.h"
 #include "WpWindowingSubsystem.h"
-#include "WpDockGroup.h"
+#include "Docking/WpDockGroup.h"
 #include "WpDockWorkspace.h"
 
 namespace

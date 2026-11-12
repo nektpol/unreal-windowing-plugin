@@ -1,5 +1,7 @@
 # M5.2 implementation guide — headers, collapse, and Settings
 
+This guide records the M5.2 source layout. On M5.3.0 and later, locate the same files through the [feature folder map](WindowingPlugin_M5_Docking_Roadmap.md#m530--organize-the-plugin-before-adding-layout-code).
+
 Start from the committed M5.1 transfer code. Implement this milestone in the runtime module. Keep the current flat split and the four-edge workspace. M5.3 supplies viewport size limits, splitter resizing, and corner ownership, including Expand Right.
 
 ## 1. Add widget access for Blueprint callers
