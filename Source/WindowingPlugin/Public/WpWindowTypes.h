@@ -37,7 +37,9 @@ enum class EWpWindowResultCode : uint8
     SlateUnavailable, UnsupportedPlatform, WrongThread,
     ShuttingDown, NativeCreationFailed, NotFound,
     InvalidState, AlreadyClosing, InternalError,
-    InvalidPlacementIdentity, DuplicatePlacementIdentity
+    InvalidPlacementIdentity, DuplicatePlacementIdentity,
+    DockWorkspaceUnavailable, PresentationTransferInProgress,
+    DockAttachmentFailed, DockEdgeOccupied
 };
 
 USTRUCT(BlueprintType)
@@ -100,4 +102,39 @@ struct WINDOWINGPLUGIN_API FWpWindowFocusSnapshot
 
     UPROPERTY(BlueprintReadOnly, Category="Windowing")
     bool bHasKeyboardFocus = false;
+};
+
+UENUM(BlueprintType)
+enum class EWpWindowPresentationMode : uint8
+{
+    Floating,
+    Docked,
+    InFloatingGroup
+};
+
+UENUM(BlueprintType)
+enum class EWpDockSide : uint8
+{
+    Left,
+    Right,
+    Top,
+    Bottom
+};
+
+USTRUCT(BlueprintType)
+struct WINDOWINGPLUGIN_API FWpWindowPresentation
+{
+    GENERATED_BODY()
+
+    UPROPERTY(BlueprintReadOnly, Category="Windowing")
+    FGuid GroupId;
+
+    UPROPERTY(BlueprintReadOnly, Category="Windowing")
+    bool bIsValid = false;
+
+    UPROPERTY(BlueprintReadOnly, Category="Windowing")
+    EWpWindowPresentationMode Mode = EWpWindowPresentationMode::Floating;
+
+    UPROPERTY(BlueprintReadOnly, Category="Windowing")
+    EWpDockSide Side = EWpDockSide::Left;
 };

@@ -87,6 +87,14 @@ void FWpNativeWindowHost::ReleaseResources()
     }
 }
 
+void FWpNativeWindowHost::SetContent(const TSharedRef<SWidget>& Content)
+{
+    if (Window)
+    {
+        Window->SetContent(Content);
+    }
+}
+
 void* FWpNativeWindowHost::GetForegroundHandle()
 {
 #if PLATFORM_WINDOWS

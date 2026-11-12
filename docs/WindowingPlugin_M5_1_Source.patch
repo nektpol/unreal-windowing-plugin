@@ -1,0 +1,1078 @@
+diff --git a/Source/WindowingPlugin/Public/WpWindowTypes.h b/Source/WindowingPlugin/Public/WpWindowTypes.h
+--- a/Source/WindowingPlugin/Public/WpWindowTypes.h
++++ b/Source/WindowingPlugin/Public/WpWindowTypes.h
+@@ -39,7 +39,7 @@
+     InvalidState, AlreadyClosing, InternalError,
+     InvalidPlacementIdentity, DuplicatePlacementIdentity,
+     DockWorkspaceUnavailable, PresentationTransferInProgress,
+-    DockAttachmentFailed
++    DockAttachmentFailed, DockEdgeOccupied
+ };
+ 
+ USTRUCT(BlueprintType)
+@@ -108,7 +108,8 @@
+ enum class EWpWindowPresentationMode : uint8
+ {
+     Floating,
+-    Docked
++    Docked,
++    InFloatingGroup
+ };
+ 
+ UENUM(BlueprintType)
+@@ -133,4 +134,7 @@
+ 
+     UPROPERTY(BlueprintReadOnly, Category="Windowing")
+     EWpDockSide Side = EWpDockSide::Left;
++
++    UPROPERTY(BlueprintReadOnly, Category="Windowing")
++    FGuid GroupId;
+ };
+\ No newline at end of file
+diff --git a/Source/WindowingPlugin/Public/WpWindowingSubsystem.h b/Source/WindowingPlugin/Public/WpWindowingSubsystem.h
+--- a/Source/WindowingPlugin/Public/WpWindowingSubsystem.h
++++ b/Source/WindowingPlugin/Public/WpWindowingSubsystem.h
+@@ -80,6 +80,12 @@
+ 	UPROPERTY(BlueprintAssignable, Category="Windowing")
+ 	FWpOnWindowPresentationChanged OnWindowPresentationChanged;
+ 
++    UFUNCTION(BlueprintCallable, Category="Windowing")
++    FWpWindowResult UndockGroup(FGuid GroupId);
++
++    UFUNCTION(BlueprintCallable, Category="Windowing")
++    FWpWindowResult DockGroup(FGuid GroupId);
++
+ private:
+ 	friend class FWpWindowLifetimeService;
+ 
+@@ -90,4 +96,5 @@
+ 	void NotifyClosed(const FWpWindowClosedEvent& Event);
+ 	void NotifyFocusChanged(const FWpWindowFocusSnapshot& Current);
+ 	FWpWindowFocusSnapshot LastReportedFocus;
++	void NotifyPresentationChanged(FWpWindowHandle Handle, const FWpWindowPresentation& Presentation);
+ };
+diff --git a/Source/WindowingPlugin/Private/WpWindowingSubsystem.cpp b/Source/WindowingPlugin/Private/WpWindowingSubsystem.cpp
+--- a/Source/WindowingPlugin/Private/WpWindowingSubsystem.cpp
++++ b/Source/WindowingPlugin/Private/WpWindowingSubsystem.cpp
+@@ -1,6 +1,7 @@
+ ﻿// Developed by Neko Creative Technologies
+ 
+ #include "WpWindowingSubsystem.h"
++#include "WpDockWorkspace.h"
+ #include "Engine/GameInstance.h"
+ #include "GameFramework/PlayerController.h"
+ #include "WindowingPlugin.h"
+@@ -199,4 +200,134 @@
+ 	const FWpWindowFocusSnapshot Previous = LastReportedFocus;
+ 	LastReportedFocus = Current;
+ 	OnWindowFocusChanged.Broadcast(Previous, Current);
+-}
+\ No newline at end of file
++}
++
++FWpWindowResult UWpWindowingSubsystem::RegisterDockWorkspace(UWpDockWorkspace* Workspace)
++{
++    if (!IsInGameThread())
++    {
++        return WpWindowingSubsystemPrivate::WrongThread();
++    }
++    if (bDeinitializing || !SessionId.IsValid() || IsEngineExitRequested())
++    {
++        return WpWindowingSubsystemPrivate::Unavailable();
++    }
++    if (!IsValid(Workspace) || Workspace->GetGameInstance() != GetGameInstance())
++    {
++        return WpWindowingSubsystemPrivate::MakeResult(
++            EWpWindowResultCode::InvalidOwningContext,
++            TEXT("The dock workspace must belong to this GameInstance."));
++    }
++    if (FWpWindowLifetimeService* Service = WpGetWindowLifetimeService())
++    {
++        return Service->RegisterDockWorkspace(SessionId, Workspace);
++    }
++    return WpWindowingSubsystemPrivate::Unavailable();
++}
++
++FWpWindowResult UWpWindowingSubsystem::UnregisterDockWorkspace(UWpDockWorkspace* Workspace)
++{
++    if (!IsInGameThread())
++    {
++        return WpWindowingSubsystemPrivate::WrongThread();
++    }
++    if (bDeinitializing || !SessionId.IsValid() || IsEngineExitRequested())
++    {
++        return WpWindowingSubsystemPrivate::Unavailable();
++    }
++    if (!Workspace)
++    {
++        return WpWindowingSubsystemPrivate::MakeResult(
++            EWpWindowResultCode::DockWorkspaceUnavailable, TEXT("A dock workspace is required."));
++    }
++    if (FWpWindowLifetimeService* Service = WpGetWindowLifetimeService())
++    {
++        return Service->UnregisterDockWorkspace(SessionId, Workspace);
++    }
++    return WpWindowingSubsystemPrivate::Unavailable();
++}
++
++FWpWindowResult UWpWindowingSubsystem::DockWindow(FWpWindowHandle Handle, EWpDockSide Side)
++{
++    if (!IsInGameThread())
++    {
++        return WpWindowingSubsystemPrivate::WrongThread();
++    }
++    if (!bDeinitializing && SessionId.IsValid() && !IsEngineExitRequested())
++    {
++        if (FWpWindowLifetimeService* Service = WpGetWindowLifetimeService())
++        {
++            return Service->DockWindow(SessionId, Handle, Side);
++        }
++    }
++    return WpWindowingSubsystemPrivate::Unavailable();
++}
++
++FWpWindowResult UWpWindowingSubsystem::UndockWindow(FWpWindowHandle Handle)
++{
++    if (!IsInGameThread())
++    {
++        return WpWindowingSubsystemPrivate::WrongThread();
++    }
++    if (!bDeinitializing && SessionId.IsValid() && !IsEngineExitRequested())
++    {
++        if (FWpWindowLifetimeService* Service = WpGetWindowLifetimeService())
++        {
++            return Service->UndockWindow(SessionId, Handle);
++        }
++    }
++    return WpWindowingSubsystemPrivate::Unavailable();
++}
++
++FWpWindowPresentation UWpWindowingSubsystem::GetWindowPresentation(FWpWindowHandle Handle) const
++{
++    if (IsInGameThread() && !bDeinitializing && SessionId.IsValid() && !IsEngineExitRequested())
++    {
++        if (const FWpWindowLifetimeService* Service = WpGetWindowLifetimeService())
++        {
++            return Service->GetWindowPresentation(SessionId, Handle);
++        }
++    }
++    return {};
++}
++
++void UWpWindowingSubsystem::NotifyPresentationChanged(
++    FWpWindowHandle Handle, const FWpWindowPresentation& Presentation)
++{
++    if (!bDeinitializing && SessionId.IsValid() && !IsEngineExitRequested())
++    {
++        OnWindowPresentationChanged.Broadcast(Handle, Presentation);
++    }
++}
++
++FWpWindowResult UWpWindowingSubsystem::UndockGroup(FGuid GroupId)
++{
++    if (!IsInGameThread())
++    {
++        return WpWindowingSubsystemPrivate::WrongThread();
++    }
++    if (!bDeinitializing && SessionId.IsValid() && !IsEngineExitRequested())
++    {
++        if (FWpWindowLifetimeService* Service = WpGetWindowLifetimeService())
++        {
++            return Service->UndockGroup(SessionId, GroupId);
++        }
++    }
++    return WpWindowingSubsystemPrivate::Unavailable();
++}
++
++FWpWindowResult UWpWindowingSubsystem::DockGroup(FGuid GroupId)
++{
++    if (!IsInGameThread())
++    {
++        return WpWindowingSubsystemPrivate::WrongThread();
++    }
++    if (!bDeinitializing && SessionId.IsValid() && !IsEngineExitRequested())
++    {
++        if (FWpWindowLifetimeService* Service = WpGetWindowLifetimeService())
++        {
++            return Service->DockGroup(SessionId, GroupId);
++        }
++    }
++    return WpWindowingSubsystemPrivate::Unavailable();
++}
+diff --git a/Source/WindowingPlugin/Private/WpDockWorkspace.cpp b/Source/WindowingPlugin/Private/WpDockWorkspace.cpp
+--- a/Source/WindowingPlugin/Private/WpDockWorkspace.cpp
++++ b/Source/WindowingPlugin/Private/WpDockWorkspace.cpp
+@@ -1,33 +1,27 @@
+ ﻿// Developed by Neko Creative Technologies
+-
+ 
+ #include "WpDockWorkspace.h"
+ 
+-#include "Components/VerticalBox.h"
+ #include "Components/HorizontalBox.h"
+ #include "Components/NativeWidgetHost.h"
++#include "Components/PanelWidget.h"
++#include "Components/VerticalBox.h"
+ 
+ UNativeWidgetHost* UWpDockWorkspace::AddDockSlot(EWpDockSide Side)
+ {
+-	if (Side == EWpDockSide::Left || Side == EWpDockSide::Right)
+-	{
+-		
+-		UVerticalBox* Stack = Side == EWpDockSide::Left ? LeftDock.Get() : RightDock.Get();
+-		if (!IsValid(Stack))
+-		{
+-			return nullptr;
+-		}
++    UPanelWidget* Stack = nullptr;
++    switch (Side)
++    {
++    case EWpDockSide::Left:   Stack = LeftDock.Get(); break;
++    case EWpDockSide::Right:  Stack = RightDock.Get(); break;
++    case EWpDockSide::Top:    Stack = TopDock.Get(); break;
++    case EWpDockSide::Bottom: Stack = BottomDock.Get(); break;
++    }
++    if (!IsValid(Stack))
++    {
++        return nullptr;
++    }
+ 
+-		UNativeWidgetHost* Slot = NewObject<UNativeWidgetHost>(this);
+-		return Stack->AddChildToVerticalBox(Slot) ? Slot : nullptr;
+-	}
+-	UHorizontalBox* Stack = Side == EWpDockSide::Top ? TopDock.Get() : BottomDock.Get();
+-	if (!IsValid(Stack))
+-	{
+-		return nullptr;
+-	}
+-	
+-	UNativeWidgetHost* Slot = NewObject<UNativeWidgetHost>(this);
+-	return Stack->AddChildToHorizontalBox(Slot) ? Slot : nullptr;
+-	
++    UNativeWidgetHost* DockHost = NewObject<UNativeWidgetHost>(this);
++    return Stack->AddChild(DockHost) ? DockHost : nullptr;
+ }
+diff --git a/Source/WindowingPlugin/Private/WpNativeWindowHost.h b/Source/WindowingPlugin/Private/WpNativeWindowHost.h
+--- a/Source/WindowingPlugin/Private/WpNativeWindowHost.h
++++ b/Source/WindowingPlugin/Private/WpNativeWindowHost.h
+@@ -11,6 +11,7 @@
+ public:
+ 	void Construct(const FWpWindowCreateOptions& Options,
+ 		const TSharedRef<SWidget>& Content, const FOnWindowClosed& PreClose);
++	void SetContent(const TSharedRef<SWidget>& Content);
+ 	bool RegisterWindow();
+ 	bool ShowWindow();
+ 	void SetTitle(const FText& Title);
+diff --git a/Source/WindowingPlugin/Private/WpNativeWindowHost.cpp b/Source/WindowingPlugin/Private/WpNativeWindowHost.cpp
+--- a/Source/WindowingPlugin/Private/WpNativeWindowHost.cpp
++++ b/Source/WindowingPlugin/Private/WpNativeWindowHost.cpp
+@@ -94,4 +94,12 @@
+ #else
+     return nullptr;
+ #endif
+-}
+\ No newline at end of file
++}
++
++void FWpNativeWindowHost::SetContent(const TSharedRef<SWidget>& Content)
++{
++    if (Window)
++    {
++        Window->SetContent(Content);
++    }
++}
+diff --git a/Source/WindowingPlugin/Private/WpWindowRuntimeEntry.h b/Source/WindowingPlugin/Private/WpWindowRuntimeEntry.h
+--- a/Source/WindowingPlugin/Private/WpWindowRuntimeEntry.h
++++ b/Source/WindowingPlugin/Private/WpWindowRuntimeEntry.h
+@@ -4,8 +4,11 @@
+ 
+ #include "CoreMinimal.h"
+ #include "WpPlacement.h"
++#include "WpWindowTypes.h"
+ #include "UObject/WeakObjectPtr.h"
+ 
++class SBox;
++class SWidget;
+ class UWpWindowRecord;
+ class UWpWindowingSubsystem;
+ class FWpNativeWindowHost;
+@@ -22,6 +25,10 @@
+ 	TUniquePtr<FWpNativeWindowHost> Host;
+ 	TWeakObjectPtr<UWpWindowingSubsystem> EventSink;
+ 	bool bFailedCreation = false;
++    TSharedPtr<SWidget> RetainedContent;
++    FWpWindowCreateOptions CreateOptions;
++    FGuid DockGroupId;
++    TSharedPtr<SBox> DockContentSlot;
+ 	TOptional<FWpPlacementIdentity> PlacementId;
+ 	FWpPlacementSnapshot Placement;
+ 	FVector2D PlacementMinimumClientSize = FVector2D::ZeroVector;
+diff --git a/Source/WindowingPlugin/Private/WpWindowLifetimeService.h b/Source/WindowingPlugin/Private/WpWindowLifetimeService.h
+--- a/Source/WindowingPlugin/Private/WpWindowLifetimeService.h
++++ b/Source/WindowingPlugin/Private/WpWindowLifetimeService.h
+@@ -6,8 +6,12 @@
+ #include "WpPlacement.h"
+ #include "UObject/GCObject.h"
+ #include "WpWindowTypes.h"
++#include "Widgets/SWindow.h"
+ 
+ class APlayerController;
++class FWpNativeWindowHost;
++class UWpDockWorkspace;
++struct FWpDockGroup;
+ class UGameInstance;
+ class UUserWidget;
+ class UWpWindowingSubsystem;
+@@ -28,7 +32,14 @@
+ 		const FText& Title);
+ 	EWpWindowState GetState(const FGuid& SessionId, FWpWindowHandle Handle) const;
+ 	FWpWindowFocusSnapshot GetWindowFocus(const FGuid& SessionId) const;
+-	void BeginSessionShutdown(const FGuid& SessionId);
++	FWpWindowResult RegisterDockWorkspace(const FGuid& SessionId, UWpDockWorkspace* Workspace);
++    FWpWindowResult UnregisterDockWorkspace(const FGuid& SessionId, UWpDockWorkspace* Workspace);
++    FWpWindowResult DockWindow(const FGuid& SessionId, FWpWindowHandle Handle, EWpDockSide Side);
++    FWpWindowResult UndockWindow(const FGuid& SessionId, FWpWindowHandle Handle);
++    FWpWindowResult UndockGroup(const FGuid& SessionId, FGuid GroupId);
++    FWpWindowResult DockGroup(const FGuid& SessionId, FGuid GroupId);
++    FWpWindowPresentation GetWindowPresentation(const FGuid& SessionId, FWpWindowHandle Handle) const;
++    void BeginSessionShutdown(const FGuid& SessionId);
+ 	void Shutdown();
+ 
+ 	void AddReferencedObjects(FReferenceCollector& Collector) override;
+@@ -43,7 +54,23 @@
+ 	FWpWindowRuntimeEntry* FindPublished(const FGuid& SessionId,
+ 		FWpWindowHandle Handle) const;
+ 	void BindSlateHooks();
+-	void OnNativePreClose(FGuid Id);
++	void OnNativePreClose(FGuid Id, const SWindow& Window);
++    void OnGroupNativePreClose(FGuid Id, const SWindow& Window);
++    FOnWindowClosed MakeTransferCloseCallback(FGuid Id, bool bGroup, TSharedPtr<bool> CandidateClosed = nullptr);
++    void RetireDockHost(TUniquePtr<FWpNativeWindowHost> Host, bool bCloseObserved = false);
++    void DrainDockHosts();
++    UWpDockWorkspace* FindDockWorkspace(const FGuid& SessionId) const;
++    FWpDockGroup* FindEdgeGroup(const FGuid& SessionId, EWpDockSide Side) const;
++    void CloseGroupChildren(FWpDockGroup& Group, EWpWindowCloseReason Reason);
++    void RemoveGroupMember(FWpWindowRuntimeEntry& Entry);
++    bool CanMoveGroup(const FWpDockGroup& Group) const;
++    FWpWindowResult MoveGroup(const FGuid& SessionId, FGuid GroupId, bool bFloat);
++    void EmitPresentationChanged(const FGuid& SessionId, FGuid Id);
++
++    TMap<FGuid, TWeakObjectPtr<UWpDockWorkspace>> DockWorkspaces;
++    TMap<FGuid, TSharedPtr<FWpDockGroup>> DockGroups;
++    TArray<TUniquePtr<FWpNativeWindowHost>> RetiringDockHosts;
++    bool bMovingDockPresentation = false;
+ 	void CloseEntry(FWpWindowRuntimeEntry& Entry, EWpWindowCloseReason Reason);
+ 	void Rollback(FGuid Id, FWpWindowRuntimeEntry& Entry);
+ 	void OnSlatePostTick(float DeltaTime);
+diff --git a/Source/WindowingPlugin/Private/WpWindowLifetimeService.cpp b/Source/WindowingPlugin/Private/WpWindowLifetimeService.cpp
+--- a/Source/WindowingPlugin/Private/WpWindowLifetimeService.cpp
++++ b/Source/WindowingPlugin/Private/WpWindowLifetimeService.cpp
+@@ -11,6 +11,8 @@
+ #include "UObject/Package.h"
+ #include "UObject/UObjectGlobals.h"
+ #include "WpNativeWindowHost.h"
++#include "WpDockGroup.h"
++#include "WpDockWorkspace.h"
+ #include "WpWindowRecord.h"
+ #include "WpWindowRuntimeEntry.h"
+ #include "WpWindowingSubsystem.h"
+@@ -191,17 +193,10 @@
+     {
+         return Fail(EWpWindowResultCode::ShuttingDown, TEXT("Session ended during widget construction."));
+     }
+-    const TWeakPtr<FCallbackTarget> WeakTarget = CallbackTarget;
++    Entry.RetainedContent = Content;
++    Entry.CreateOptions = Options;
+     Entry.Host = MakeUnique<FWpNativeWindowHost>();
+-    Entry.Host->Construct(Options, Content,
+-        FOnWindowClosed::CreateLambda([WeakTarget, Id](const TSharedRef<SWindow>&)
+-        {
+-            const TSharedPtr<FCallbackTarget> Target = WeakTarget.Pin();
+-            if (Target && Target->Service)
+-            {
+-                Target->Service->OnNativePreClose(Id);
+-            }
+-        }));
++    Entry.Host->Construct(Options, Content, MakeTransferCloseCallback(Id, false));
+ 
+     if (!Entry.Host->RegisterWindow())
+     {
+@@ -223,7 +218,7 @@
+             }
+         }
+     }
+-    if (!Entry.Record->bNativeCloseObserved && Entry.PlacementId.IsSet())
++    if (!Entry.Record->bNativeCloseObserved)
+     {
+         Entry.bHasPlacement = WpPlacement::Capture(Entry.Host->GetNativeHandle(), Entry.Placement);
+     }
+@@ -253,11 +248,15 @@
+     return Result(EWpWindowResultCode::Success);
+ }
+ 
+-void FWpWindowLifetimeService::OnNativePreClose(FGuid Id)
++void FWpWindowLifetimeService::OnNativePreClose(FGuid Id, const SWindow& Window)
+ {
+     check(IsInGameThread());
+     if (const TUniquePtr<FWpWindowRuntimeEntry>* Found = Entries.Find(Id))
+     {
++        if (!(*Found)->Host || !(*Found)->Host->IsSlateWindow(&Window))
++        {
++            return;
++        }
+         CapturePlacement(*(*Found));
+         UWpWindowRecord& Record = *(*Found)->Record;
+         Record.bNativeCloseObserved = true;
+@@ -301,6 +300,10 @@
+     {
+         return Result(EWpWindowResultCode::ShuttingDown, TEXT("WindowingPlugin is shutting down."));
+     }
++    if (bMovingDockPresentation)
++    {
++        return Result(EWpWindowResultCode::PresentationTransferInProgress, TEXT("A window presentation is changing."));
++    }
+     FWpWindowRuntimeEntry* Entry = FindPublished(SessionId, Handle);
+     if (!Entry)
+     {
+@@ -326,6 +329,10 @@
+     {
+         return Result(EWpWindowResultCode::ShuttingDown, TEXT("WindowingPlugin is shutting down."));
+     }
++    if (bMovingDockPresentation)
++    {
++        return Result(EWpWindowResultCode::PresentationTransferInProgress, TEXT("A window presentation is changing."));
++    }
+     FWpWindowRuntimeEntry* Entry = FindPublished(SessionId, Handle);
+     if (!Entry)
+     {
+@@ -336,7 +343,11 @@
+         return Result(EWpWindowResultCode::InvalidState, TEXT("Window is not open."));
+     }
+     TGuardValue<int32> Operation(OperationDepth, OperationDepth + 1);
+-    Entry->Host->SetTitle(Title);
++    Entry->CreateOptions.Title = Title;
++    if (Entry->Host)
++    {
++        Entry->Host->SetTitle(Title);
++    }
+     return Result(EWpWindowResultCode::Success);
+ }
+ 
+@@ -424,6 +435,14 @@
+     }
+     TGuardValue<int32> Operation(OperationDepth, OperationDepth + 1);
+ 
++    for (const auto& Pair : DockGroups)
++    {
++        FWpDockGroup& Group = *Pair.Value;
++        if (!Group.Host && (!Group.Slot.IsValid() || !FindDockWorkspace(Group.SessionId)))
++        {
++            CloseGroupChildren(Group, EWpWindowCloseReason::HostRequest);
++        }
++    }
+     TArray<FGuid> Ids;
+     Entries.GenerateKeyArray(Ids);
+     for (const FGuid& Id : Ids)
+@@ -441,6 +460,8 @@
+             Entry.Host->ReleaseResources();
+             Entry.Host.Reset();
+         }
++        RemoveGroupMember(Entry);
++        Entry.RetainedContent.Reset();
+         Record.State = Entry.bFailedCreation ? EWpWindowState::Failed : EWpWindowState::Closed;
+         if (!bShuttingDown && !IsEngineExitRequested() && !Entry.bFailedCreation &&
+             Record.bOpenedEventEmitted && !Record.bClosedEventEmitted)
+@@ -461,12 +482,14 @@
+         }
+         Entries.Remove(Id);
+     }
++    DrainDockHosts();
+ }
+ 
+ void FWpWindowLifetimeService::BeginSessionShutdown(const FGuid& SessionId)
+ {
+     check(IsInGameThread());
+     FocusObservers.Remove(SessionId);
++    DockWorkspaces.Remove(SessionId);
+     if (bShuttingDown)
+     {
+         return;
+@@ -497,6 +520,7 @@
+     }
+     bShuttingDown = true;
+     FocusObservers.Reset();
++    DockWorkspaces.Reset();
+ 
+     {
+         TGuardValue<int32> Operation(OperationDepth, OperationDepth + 1);
+@@ -509,7 +533,7 @@
+     }
+     Drain();
+     FlushPlacements();
+-    if (!Entries.IsEmpty())
++    if (!Entries.IsEmpty() || !RetiringDockHosts.IsEmpty() || !DockGroups.IsEmpty())
+     {
+         UE_LOG(LogTemp, Fatal, TEXT("WindowingPlugin still owns windows after the terminal Slate drain."));
+     }
+@@ -610,7 +634,7 @@
+     }
+ 
+     const double Now = FPlatformTime::Seconds();
+-    if (bPlacementLoaded && Now >= NextPlacementSample)
++    if (!Entries.IsEmpty() && Now >= NextPlacementSample)
+     {
+         NextPlacementSample = Now + 0.25;
+         const TArray<FWpPlacementMonitor> Monitors = WpPlacement::ReadMonitors();
+@@ -629,11 +653,16 @@
+         {
+             const TUniquePtr<FWpWindowRuntimeEntry>* Found = Entries.Find(Id);
+             if (!Found || (*Found)->Record->State != EWpWindowState::Open ||
+-                !(*Found)->PlacementId.IsSet() || !(*Found)->Host)
++                !(*Found)->Host)
+             {
+                 continue;
+             }
+             FWpWindowRuntimeEntry& Entry = *(*Found);
++            if (!Entry.PlacementId.IsSet())
++            {
++                Entry.bHasPlacement |= WpPlacement::Capture(Entry.Host->GetNativeHandle(), Entry.Placement);
++                continue;
++            }
+             Entry.bRecoverPlacement |= bTopologyChanged;
+             if (Entry.bRecoverPlacement && Entry.bHasPlacement)
+             {
+diff --git a/Source/WindowingPlugin/Private/WpDockGroup.h b/Source/WindowingPlugin/Private/WpDockGroup.h
+new file mode 100644
+--- /dev/null
++++ b/Source/WindowingPlugin/Private/WpDockGroup.h
+@@ -0,0 +1,17 @@
++#pragma once
++#include "WpNativeWindowHost.h"
++#include "Components/NativeWidgetHost.h"
++#include "Widgets/SBoxPanel.h"
++
++struct FWpDockGroup
++{
++    FGuid Id = FGuid::NewGuid();
++    FGuid SessionId;
++    EWpDockSide Side = EWpDockSide::Left;
++    FText Title;
++    TSharedPtr<SBoxPanel> Content;
++    TArray<FGuid> Children;
++    TWeakObjectPtr<UNativeWidgetHost> Slot;
++    TUniquePtr<FWpNativeWindowHost> Host;
++    bool bNativeClosing = false;
++};
+diff --git a/Source/WindowingPlugin/Private/WpWindowDocking.cpp b/Source/WindowingPlugin/Private/WpWindowDocking.cpp
+new file mode 100644
+--- /dev/null
++++ b/Source/WindowingPlugin/Private/WpWindowDocking.cpp
+@@ -0,0 +1,508 @@
++#include "WpWindowLifetimeService.h"
++
++#include "WpDockGroup.h"
++#include "WpDockWorkspace.h"
++#include "WpWindowingSubsystem.h"
++#include "WpWindowRecord.h"
++#include "WpWindowRuntimeEntry.h"
++#include "Templates/UnrealTemplate.h"
++#include "Widgets/Layout/SBox.h"
++#include "Widgets/SNullWidget.h"
++
++namespace
++{
++    FWpWindowResult DockResult(EWpWindowResultCode Code, const TCHAR* Message = TEXT(""))
++    {
++        FWpWindowResult Result;
++        Result.Code = Code;
++        Result.Message = Message;
++        return Result;
++    }
++
++    bool IsHorizontal(EWpDockSide Side)
++    {
++        return Side == EWpDockSide::Top || Side == EWpDockSide::Bottom;
++    }
++
++    void ClearSlot(UNativeWidgetHost* Slot)
++    {
++        if (IsValid(Slot))
++        {
++            Slot->SetContent(SNullWidget::NullWidget);
++            Slot->RemoveFromParent();
++        }
++    }
++}
++
++FWpWindowResult FWpWindowLifetimeService::RegisterDockWorkspace(
++    const FGuid& SessionId, UWpDockWorkspace* Workspace)
++{
++    if (bShuttingDown || IsEngineExitRequested())
++    {
++        return DockResult(EWpWindowResultCode::ShuttingDown);
++    }
++    if (!IsValid(Workspace) || !Workspace->IsInViewport())
++    {
++        return DockResult(EWpWindowResultCode::DockWorkspaceUnavailable, TEXT("Add the workspace to the viewport first."));
++    }
++    if (const auto* Existing = DockWorkspaces.Find(SessionId))
++    {
++        if (Existing->IsValid() && Existing->Get() != Workspace)
++        {
++            return DockResult(EWpWindowResultCode::InvalidState, TEXT("Unregister the existing workspace first."));
++        }
++    }
++    DockWorkspaces.Add(SessionId, Workspace);
++    return DockResult(EWpWindowResultCode::Success);
++}
++
++FWpWindowResult FWpWindowLifetimeService::UnregisterDockWorkspace(
++    const FGuid& SessionId, UWpDockWorkspace* Workspace)
++{
++    const auto* Existing = DockWorkspaces.Find(SessionId);
++    if (Existing && Existing->Get() == Workspace)
++    {
++        DockWorkspaces.Remove(SessionId);
++        TGuardValue<int32> Operation(OperationDepth, OperationDepth + 1);
++        for (const auto& Pair : DockGroups)
++        {
++            FWpDockGroup& Group = *Pair.Value;
++            if (Group.SessionId == SessionId && !Group.Host)
++            {
++                CloseGroupChildren(Group, EWpWindowCloseReason::HostRequest);
++            }
++        }
++    }
++    return DockResult(EWpWindowResultCode::Success);
++}
++
++UWpDockWorkspace* FWpWindowLifetimeService::FindDockWorkspace(const FGuid& SessionId) const
++{
++    const auto* Found = DockWorkspaces.Find(SessionId);
++    UWpDockWorkspace* Workspace = Found ? Found->Get() : nullptr;
++    return Workspace && Workspace->IsInViewport() ? Workspace : nullptr;
++}
++
++FWpDockGroup* FWpWindowLifetimeService::FindEdgeGroup(const FGuid& SessionId, EWpDockSide Side) const
++{
++    for (const auto& Pair : DockGroups)
++    {
++        FWpDockGroup& Group = *Pair.Value;
++        if (Group.SessionId == SessionId && Group.Side == Side && !Group.Host)
++        {
++            return &Group;
++        }
++    }
++    return nullptr;
++}
++
++FWpWindowPresentation FWpWindowLifetimeService::GetWindowPresentation(
++    const FGuid& SessionId, FWpWindowHandle Handle) const
++{
++    const FWpWindowRuntimeEntry* Entry = FindPublished(SessionId, Handle);
++    FWpWindowPresentation Presentation;
++    if (!Entry || Entry->Record->State != EWpWindowState::Open)
++    {
++        return Presentation;
++    }
++    Presentation.bIsValid = true;
++    if (const auto* Group = DockGroups.Find(Entry->DockGroupId))
++    {
++        Presentation.Mode = (*Group)->Host ? EWpWindowPresentationMode::InFloatingGroup
++            : EWpWindowPresentationMode::Docked;
++        Presentation.Side = (*Group)->Side;
++        Presentation.GroupId = (*Group)->Id;
++    }
++    return Presentation;
++}
++
++void FWpWindowLifetimeService::EmitPresentationChanged(const FGuid& SessionId, FGuid Id)
++{
++    FWpWindowHandle Handle;
++    Handle.Id = Id;
++    const FWpWindowPresentation Snapshot = GetWindowPresentation(SessionId, Handle);
++    const FWpWindowRuntimeEntry* Entry = Snapshot.bIsValid ? FindPublished(SessionId, Handle) : nullptr;
++    if (UWpWindowingSubsystem* Sink = Entry ? Entry->EventSink.Get() : nullptr)
++    {
++        Sink->NotifyPresentationChanged(Handle, Snapshot);
++    }
++}
++
++FOnWindowClosed FWpWindowLifetimeService::MakeTransferCloseCallback(
++    FGuid Id, bool bGroup, TSharedPtr<bool> CandidateClosed)
++{
++    const TWeakPtr<FCallbackTarget> WeakTarget = CallbackTarget;
++    return FOnWindowClosed::CreateLambda(
++        [WeakTarget, Id, bGroup, CandidateClosed](const TSharedRef<SWindow>& Window)
++        {
++            if (CandidateClosed)
++            {
++                *CandidateClosed = true;
++            }
++            const TSharedPtr<FCallbackTarget> Target = WeakTarget.Pin();
++            if (!Target || !Target->Service)
++            {
++                return;
++            }
++            if (bGroup)
++            {
++                Target->Service->OnGroupNativePreClose(Id, Window.Get());
++            }
++            else
++            {
++                Target->Service->OnNativePreClose(Id, Window.Get());
++            }
++        });
++}
++
++void FWpWindowLifetimeService::RetireDockHost(TUniquePtr<FWpNativeWindowHost> Host, bool bCloseObserved)
++{
++    if (!Host)
++    {
++        return;
++    }
++    Host->SetContent(SNullWidget::NullWidget);
++    FWpNativeWindowHost* Retiring = Host.Get();
++    RetiringDockHosts.Add(MoveTemp(Host));
++    if (!bCloseObserved && Retiring->IsTracked())
++    {
++        Retiring->RequestDestroy();
++    }
++}
++
++void FWpWindowLifetimeService::DrainDockHosts()
++{
++    for (int32 Index = RetiringDockHosts.Num() - 1; Index >= 0; --Index)
++    {
++        FWpNativeWindowHost& Host = *RetiringDockHosts[Index];
++        if (!Host.IsTracked() && !Host.HasNativeHandle())
++        {
++            Host.ReleaseResources();
++            RetiringDockHosts.RemoveAtSwap(Index);
++        }
++    }
++}
++
++void FWpWindowLifetimeService::CloseGroupChildren(FWpDockGroup& Group, EWpWindowCloseReason Reason)
++{
++    for (const FGuid& Id : Group.Children)
++    {
++        if (const auto* Entry = Entries.Find(Id))
++        {
++            CloseEntry(*(*Entry), Reason);
++        }
++    }
++}
++
++void FWpWindowLifetimeService::OnGroupNativePreClose(FGuid Id, const SWindow& Window)
++{
++    check(IsInGameThread());
++    if (const auto* Found = DockGroups.Find(Id))
++    {
++        FWpDockGroup& Group = *(*Found);
++        if (Group.Host && Group.Host->IsSlateWindow(&Window))
++        {
++            Group.bNativeClosing = true;
++            CloseGroupChildren(Group, EWpWindowCloseReason::UserOrPlatform);
++        }
++    }
++}
++
++void FWpWindowLifetimeService::RemoveGroupMember(FWpWindowRuntimeEntry& Entry)
++{
++    if (auto* Found = DockGroups.Find(Entry.DockGroupId))
++    {
++        const TSharedPtr<FWpDockGroup> Group = *Found;
++        if (Entry.DockContentSlot)
++        {
++            Entry.DockContentSlot->SetContent(SNullWidget::NullWidget);
++            if (IsHorizontal(Group->Side))
++            {
++                StaticCastSharedPtr<SHorizontalBox>(Group->Content)->RemoveSlot(Entry.DockContentSlot.ToSharedRef());
++            }
++            else
++            {
++                StaticCastSharedPtr<SVerticalBox>(Group->Content)->RemoveSlot(Entry.DockContentSlot.ToSharedRef());
++            }
++        }
++        Group->Children.Remove(Entry.Record->WindowId);
++        if (Group->Children.IsEmpty())
++        {
++            DockGroups.Remove(Group->Id);
++            ClearSlot(Group->Slot.Get());
++            RetireDockHost(MoveTemp(Group->Host), Group->bNativeClosing);
++        }
++    }
++    Entry.DockContentSlot.Reset();
++    Entry.DockGroupId.Invalidate();
++}
++
++FWpWindowResult FWpWindowLifetimeService::DockWindow(
++    const FGuid& SessionId, FWpWindowHandle Handle, EWpDockSide Side)
++{
++    if (bMovingDockPresentation)
++    {
++        return DockResult(EWpWindowResultCode::PresentationTransferInProgress);
++    }
++    FWpWindowRuntimeEntry* Entry = FindPublished(SessionId, Handle);
++    if (!Entry)
++    {
++        return DockResult(EWpWindowResultCode::NotFound);
++    }
++    if (Entry->Record->State != EWpWindowState::Open || bShuttingDown)
++    {
++        return DockResult(EWpWindowResultCode::InvalidState);
++    }
++    if (const auto* Group = DockGroups.Find(Entry->DockGroupId))
++    {
++        return DockResult(!(*Group)->Host && (*Group)->Side == Side
++            ? EWpWindowResultCode::Success : EWpWindowResultCode::InvalidState);
++    }
++    UWpDockWorkspace* Workspace = FindDockWorkspace(SessionId);
++    if (!Workspace)
++    {
++        return DockResult(EWpWindowResultCode::DockWorkspaceUnavailable);
++    }
++    if (!Entry->Host || !Entry->RetainedContent)
++    {
++        return DockResult(EWpWindowResultCode::InvalidState);
++    }
++
++    {
++        TGuardValue<bool> Transfer(bMovingDockPresentation, true);
++        TGuardValue<int32> Operation(OperationDepth, OperationDepth + 1);
++        FWpDockGroup* Group = FindEdgeGroup(SessionId, Side);
++        if (!Group)
++        {
++            const TSharedRef<FWpDockGroup> NewGroup = MakeShared<FWpDockGroup>();
++            NewGroup->SessionId = SessionId;
++            NewGroup->Side = Side;
++            NewGroup->Title = FText::Format(NSLOCTEXT("WindowingPlugin", "DockTitle", "{0} Docker"),
++                StaticEnum<EWpDockSide>()->GetDisplayNameTextByValue(static_cast<int64>(Side)));
++            if (IsHorizontal(Side))
++            {
++                NewGroup->Content = SNew(SHorizontalBox);
++            }
++            else
++            {
++                NewGroup->Content = SNew(SVerticalBox);
++            }
++            UNativeWidgetHost* Slot = Workspace->AddDockSlot(Side);
++            if (!Slot || FindDockWorkspace(SessionId) != Workspace ||
++                Entry->Record->State != EWpWindowState::Open)
++            {
++                ClearSlot(Slot);
++                return DockResult(EWpWindowResultCode::DockAttachmentFailed);
++            }
++            NewGroup->Slot = Slot;
++            Slot->SetContent(NewGroup->Content.ToSharedRef());
++            DockGroups.Add(NewGroup->Id, NewGroup);
++            Group = &NewGroup.Get();
++        }
++        else if (!Group->Slot.IsValid())
++        {
++            return DockResult(EWpWindowResultCode::DockAttachmentFailed);
++        }
++
++        if (Entry->PlacementId.IsSet())
++        {
++            CapturePlacement(*Entry);
++        }
++        else
++        {
++            Entry->bHasPlacement |= WpPlacement::Capture(Entry->Host->GetNativeHandle(), Entry->Placement);
++        }
++        Entry->Host->SetContent(SNullWidget::NullWidget);
++        const TSharedRef<SBox> Slot = SNew(SBox)[Entry->RetainedContent.ToSharedRef()];
++        if (IsHorizontal(Side))
++        {
++            StaticCastSharedPtr<SHorizontalBox>(Group->Content)->AddSlot().FillWidth(1.f)[Slot];
++        }
++        else
++        {
++            StaticCastSharedPtr<SVerticalBox>(Group->Content)->AddSlot().FillHeight(1.f)[Slot];
++        }
++        Entry->DockContentSlot = Slot;
++        Entry->DockGroupId = Group->Id;
++        Group->Children.Add(Handle.Id);
++        RetireDockHost(MoveTemp(Entry->Host));
++    }
++    EmitPresentationChanged(SessionId, Handle.Id);
++    return DockResult(EWpWindowResultCode::Success);
++}
++
++FWpWindowResult FWpWindowLifetimeService::UndockWindow(const FGuid& SessionId, FWpWindowHandle Handle)
++{
++    if (bMovingDockPresentation)
++    {
++        return DockResult(EWpWindowResultCode::PresentationTransferInProgress);
++    }
++    FWpWindowRuntimeEntry* Entry = FindPublished(SessionId, Handle);
++    if (!Entry)
++    {
++        return DockResult(EWpWindowResultCode::NotFound);
++    }
++    if (Entry->Record->State != EWpWindowState::Open || bShuttingDown)
++    {
++        return DockResult(EWpWindowResultCode::InvalidState);
++    }
++    if (!Entry->DockGroupId.IsValid())
++    {
++        return DockResult(EWpWindowResultCode::Success);
++    }
++    if (!Entry->DockContentSlot || !Entry->RetainedContent)
++    {
++        return DockResult(EWpWindowResultCode::InvalidState);
++    }
++
++    {
++        TGuardValue<bool> Transfer(bMovingDockPresentation, true);
++        TGuardValue<int32> Operation(OperationDepth, OperationDepth + 1);
++        const TSharedRef<bool> Closed = MakeShared<bool>(false);
++        TUniquePtr<FWpNativeWindowHost> Candidate = MakeUnique<FWpNativeWindowHost>();
++        Candidate->Construct(Entry->CreateOptions, SNullWidget::NullWidget,
++            MakeTransferCloseCallback(Handle.Id, false, Closed));
++        if (!Candidate->RegisterWindow() || *Closed || Entry->Record->State != EWpWindowState::Open)
++        {
++            RetireDockHost(MoveTemp(Candidate), *Closed);
++            return DockResult(EWpWindowResultCode::NativeCreationFailed);
++        }
++        const bool bRestored = Entry->bHasPlacement &&
++            WpPlacement::Restore(Candidate->GetNativeHandle(), Entry->Placement, Entry->PlacementMinimumClientSize);
++        if (*Closed || Entry->Record->State != EWpWindowState::Open)
++        {
++            RetireDockHost(MoveTemp(Candidate), *Closed);
++            return DockResult(EWpWindowResultCode::NativeCreationFailed);
++        }
++
++        Entry->DockContentSlot->SetContent(SNullWidget::NullWidget);
++        Candidate->SetContent(Entry->RetainedContent.ToSharedRef());
++        const bool bShown = Candidate->ShowWindow();
++        if (bShown && bRestored && Entry->Placement.bMaximized && !*Closed)
++        {
++            Candidate->MaximizeWindow();
++        }
++        if (!bShown || *Closed || Entry->Record->State != EWpWindowState::Open)
++        {
++            RetireDockHost(MoveTemp(Candidate), *Closed);
++            Entry->DockContentSlot->SetContent(Entry->RetainedContent.ToSharedRef());
++            return DockResult(EWpWindowResultCode::NativeCreationFailed);
++        }
++        Entry->Host = MoveTemp(Candidate);
++        Entry->Record->bNativeCloseObserved = false;
++        Entry->Record->bNativeDestroyRequested = false;
++        RemoveGroupMember(*Entry);
++        CapturePlacement(*Entry);
++    }
++    EmitPresentationChanged(SessionId, Handle.Id);
++    return DockResult(EWpWindowResultCode::Success);
++}
++
++bool FWpWindowLifetimeService::CanMoveGroup(const FWpDockGroup& Group) const
++{
++    if (bShuttingDown || Group.bNativeClosing || Group.Children.IsEmpty())
++    {
++        return false;
++    }
++    for (const FGuid& Id : Group.Children)
++    {
++        const auto* Entry = Entries.Find(Id);
++        if (!Entry || (*Entry)->Record->State != EWpWindowState::Open)
++        {
++            return false;
++        }
++    }
++    return true;
++}
++
++FWpWindowResult FWpWindowLifetimeService::UndockGroup(const FGuid& SessionId, FGuid GroupId)
++{
++    return MoveGroup(SessionId, GroupId, true);
++}
++
++FWpWindowResult FWpWindowLifetimeService::DockGroup(const FGuid& SessionId, FGuid GroupId)
++{
++    return MoveGroup(SessionId, GroupId, false);
++}
++
++FWpWindowResult FWpWindowLifetimeService::MoveGroup(const FGuid& SessionId, FGuid GroupId, bool bFloat)
++{
++    if (bMovingDockPresentation)
++    {
++        return DockResult(EWpWindowResultCode::PresentationTransferInProgress);
++    }
++    const auto* Found = DockGroups.Find(GroupId);
++    if (!Found || (*Found)->SessionId != SessionId)
++    {
++        return DockResult(EWpWindowResultCode::NotFound);
++    }
++    FWpDockGroup& Group = *(*Found);
++    if (!CanMoveGroup(Group))
++    {
++        return DockResult(EWpWindowResultCode::InvalidState);
++    }
++    if (bFloat == Group.Host.IsValid())
++    {
++        return DockResult(EWpWindowResultCode::Success);
++    }
++    UWpDockWorkspace* Workspace = FindDockWorkspace(SessionId);
++    if (!Workspace || (bFloat && !Group.Slot.IsValid()))
++    {
++        return DockResult(EWpWindowResultCode::DockWorkspaceUnavailable);
++    }
++    if (!bFloat && FindEdgeGroup(SessionId, Group.Side))
++    {
++        return DockResult(EWpWindowResultCode::DockEdgeOccupied);
++    }
++
++    TGuardValue<bool> Transfer(bMovingDockPresentation, true);
++    TGuardValue<int32> Operation(OperationDepth, OperationDepth + 1);
++    if (bFloat)
++    {
++        const TSharedRef<bool> Closed = MakeShared<bool>(false);
++        TUniquePtr<FWpNativeWindowHost> Candidate = MakeUnique<FWpNativeWindowHost>();
++        FWpWindowCreateOptions Options;
++        Options.Title = Group.Title;
++        Candidate->Construct(Options, SNullWidget::NullWidget, MakeTransferCloseCallback(GroupId, true, Closed));
++        if (!Candidate->RegisterWindow() || *Closed || !CanMoveGroup(Group) || !Group.Slot.IsValid())
++        {
++            RetireDockHost(MoveTemp(Candidate), *Closed);
++            return DockResult(EWpWindowResultCode::NativeCreationFailed);
++        }
++        Group.Slot->SetContent(SNullWidget::NullWidget);
++        Candidate->SetContent(Group.Content.ToSharedRef());
++        if (!Candidate->ShowWindow() || *Closed || !CanMoveGroup(Group) ||
++            FindDockWorkspace(SessionId) != Workspace)
++        {
++            RetireDockHost(MoveTemp(Candidate), *Closed);
++            if (UNativeWidgetHost* Slot = Group.Slot.Get())
++            {
++                Slot->SetContent(Group.Content.ToSharedRef());
++            }
++            return DockResult(EWpWindowResultCode::NativeCreationFailed);
++        }
++        Group.Host = MoveTemp(Candidate);
++        ClearSlot(Group.Slot.Get());
++        Group.Slot.Reset();
++    }
++    else
++    {
++        UNativeWidgetHost* Slot = Workspace->AddDockSlot(Group.Side);
++        if (!Slot || !CanMoveGroup(Group) || FindDockWorkspace(SessionId) != Workspace)
++        {
++            ClearSlot(Slot);
++            return DockResult(EWpWindowResultCode::DockAttachmentFailed);
++        }
++        Group.Host->SetContent(SNullWidget::NullWidget);
++        Slot->SetContent(Group.Content.ToSharedRef());
++        Group.Slot = Slot;
++        RetireDockHost(MoveTemp(Group.Host));
++    }
++
++    // Keep transfers blocked until every member has received the committed presentation.
++    for (const FGuid& Child : Group.Children)
++    {
++        EmitPresentationChanged(SessionId, Child);
++    }
++    return DockResult(EWpWindowResultCode::Success);
++}

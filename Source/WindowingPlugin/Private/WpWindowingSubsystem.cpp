@@ -5,6 +5,7 @@
 #include "GameFramework/PlayerController.h"
 #include "WindowingPlugin.h"
 #include "WpWindowLifetimeService.h"
+#include "WpDockWorkspace.h"
 
 static FWpWindowLifetimeService* WpGetWindowLifetimeService()
 {
@@ -199,4 +200,134 @@ void UWpWindowingSubsystem::NotifyFocusChanged(const FWpWindowFocusSnapshot& Cur
 	const FWpWindowFocusSnapshot Previous = LastReportedFocus;
 	LastReportedFocus = Current;
 	OnWindowFocusChanged.Broadcast(Previous, Current);
+}
+
+FWpWindowResult UWpWindowingSubsystem::RegisterDockWorkspace(UWpDockWorkspace* Workspace)
+{
+    if (!IsInGameThread())
+    {
+        return WpWindowingSubsystemPrivate::WrongThread();
+    }
+    if (bDeinitializing || !SessionId.IsValid() || IsEngineExitRequested())
+    {
+        return WpWindowingSubsystemPrivate::Unavailable();
+    }
+    if (!IsValid(Workspace) || Workspace->GetGameInstance() != GetGameInstance())
+    {
+        return WpWindowingSubsystemPrivate::MakeResult(
+            EWpWindowResultCode::InvalidOwningContext,
+            TEXT("The dock workspace must belong to this GameInstance."));
+    }
+    if (FWpWindowLifetimeService* Service = WpGetWindowLifetimeService())
+    {
+        return Service->RegisterDockWorkspace(SessionId, Workspace);
+    }
+    return WpWindowingSubsystemPrivate::Unavailable();
+}
+
+FWpWindowResult UWpWindowingSubsystem::UnregisterDockWorkspace(UWpDockWorkspace* Workspace)
+{
+    if (!IsInGameThread())
+    {
+        return WpWindowingSubsystemPrivate::WrongThread();
+    }
+    if (bDeinitializing || !SessionId.IsValid() || IsEngineExitRequested())
+    {
+        return WpWindowingSubsystemPrivate::Unavailable();
+    }
+    if (!Workspace)
+    {
+        return WpWindowingSubsystemPrivate::MakeResult(
+            EWpWindowResultCode::DockWorkspaceUnavailable, TEXT("A dock workspace is required."));
+    }
+    if (FWpWindowLifetimeService* Service = WpGetWindowLifetimeService())
+    {
+        return Service->UnregisterDockWorkspace(SessionId, Workspace);
+    }
+    return WpWindowingSubsystemPrivate::Unavailable();
+}
+
+FWpWindowResult UWpWindowingSubsystem::DockWindow(FWpWindowHandle Handle, EWpDockSide Side)
+{
+    if (!IsInGameThread())
+    {
+        return WpWindowingSubsystemPrivate::WrongThread();
+    }
+    if (!bDeinitializing && SessionId.IsValid() && !IsEngineExitRequested())
+    {
+        if (FWpWindowLifetimeService* Service = WpGetWindowLifetimeService())
+        {
+            return Service->DockWindow(SessionId, Handle, Side);
+        }
+    }
+    return WpWindowingSubsystemPrivate::Unavailable();
+}
+
+FWpWindowResult UWpWindowingSubsystem::UndockWindow(FWpWindowHandle Handle)
+{
+    if (!IsInGameThread())
+    {
+        return WpWindowingSubsystemPrivate::WrongThread();
+    }
+    if (!bDeinitializing && SessionId.IsValid() && !IsEngineExitRequested())
+    {
+        if (FWpWindowLifetimeService* Service = WpGetWindowLifetimeService())
+        {
+            return Service->UndockWindow(SessionId, Handle);
+        }
+    }
+    return WpWindowingSubsystemPrivate::Unavailable();
+}
+
+FWpWindowPresentation UWpWindowingSubsystem::GetWindowPresentation(FWpWindowHandle Handle) const
+{
+    if (IsInGameThread() && !bDeinitializing && SessionId.IsValid() && !IsEngineExitRequested())
+    {
+        if (const FWpWindowLifetimeService* Service = WpGetWindowLifetimeService())
+        {
+            return Service->GetWindowPresentation(SessionId, Handle);
+        }
+    }
+    return {};
+}
+
+void UWpWindowingSubsystem::NotifyPresentationChanged(
+    FWpWindowHandle Handle, const FWpWindowPresentation& Presentation)
+{
+    if (!bDeinitializing && SessionId.IsValid() && !IsEngineExitRequested())
+    {
+        OnWindowPresentationChanged.Broadcast(Handle, Presentation);
+    }
+}
+
+FWpWindowResult UWpWindowingSubsystem::UndockGroup(FGuid GroupId)
+{
+    if (!IsInGameThread())
+    {
+        return WpWindowingSubsystemPrivate::WrongThread();
+    }
+    if (!bDeinitializing && SessionId.IsValid() && !IsEngineExitRequested())
+    {
+        if (FWpWindowLifetimeService* Service = WpGetWindowLifetimeService())
+        {
+            return Service->UndockGroup(SessionId, GroupId);
+        }
+    }
+    return WpWindowingSubsystemPrivate::Unavailable();
+}
+
+FWpWindowResult UWpWindowingSubsystem::DockGroup(FGuid GroupId)
+{
+    if (!IsInGameThread())
+    {
+        return WpWindowingSubsystemPrivate::WrongThread();
+    }
+    if (!bDeinitializing && SessionId.IsValid() && !IsEngineExitRequested())
+    {
+        if (FWpWindowLifetimeService* Service = WpGetWindowLifetimeService())
+        {
+            return Service->DockGroup(SessionId, GroupId);
+        }
+    }
+    return WpWindowingSubsystemPrivate::Unavailable();
 }

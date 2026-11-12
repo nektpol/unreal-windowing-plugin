@@ -14,6 +14,8 @@
 #include "WpWindowRecord.h"
 #include "WpWindowRuntimeEntry.h"
 #include "WpWindowingSubsystem.h"
+#include "WpDockGroup.h"
+#include "WpDockWorkspace.h"
 
 namespace
 {
@@ -191,17 +193,10 @@ FWpWindowResult FWpWindowLifetimeService::CreateWindow(const FGuid& SessionId,
     {
         return Fail(EWpWindowResultCode::ShuttingDown, TEXT("Session ended during widget construction."));
     }
-    const TWeakPtr<FCallbackTarget> WeakTarget = CallbackTarget;
+    Entry.RetainedContent = Content;
+    Entry.CreateOptions = Options;
     Entry.Host = MakeUnique<FWpNativeWindowHost>();
-    Entry.Host->Construct(Options, Content,
-        FOnWindowClosed::CreateLambda([WeakTarget, Id](const TSharedRef<SWindow>&)
-        {
-            const TSharedPtr<FCallbackTarget> Target = WeakTarget.Pin();
-            if (Target && Target->Service)
-            {
-                Target->Service->OnNativePreClose(Id);
-            }
-        }));
+    Entry.Host->Construct(Options, Content, MakeTransferCloseCallback(Id, false));
 
     if (!Entry.Host->RegisterWindow())
     {
@@ -223,7 +218,7 @@ FWpWindowResult FWpWindowLifetimeService::CreateWindow(const FGuid& SessionId,
             }
         }
     }
-    if (!Entry.Record->bNativeCloseObserved && Entry.PlacementId.IsSet())
+    if (!Entry.Record->bNativeCloseObserved)
     {
         Entry.bHasPlacement = WpPlacement::Capture(Entry.Host->GetNativeHandle(), Entry.Placement);
     }
@@ -253,11 +248,15 @@ FWpWindowResult FWpWindowLifetimeService::CreateWindow(const FGuid& SessionId,
     return Result(EWpWindowResultCode::Success);
 }
 
-void FWpWindowLifetimeService::OnNativePreClose(FGuid Id)
+void FWpWindowLifetimeService::OnNativePreClose(FGuid Id, const SWindow& Window)
 {
     check(IsInGameThread());
     if (const TUniquePtr<FWpWindowRuntimeEntry>* Found = Entries.Find(Id))
     {
+        if (!(*Found)->Host || !(*Found)->Host->IsSlateWindow(&Window))
+        {
+            return;
+        }
         CapturePlacement(*(*Found));
         UWpWindowRecord& Record = *(*Found)->Record;
         Record.bNativeCloseObserved = true;
@@ -301,6 +300,10 @@ FWpWindowResult FWpWindowLifetimeService::RequestClose(const FGuid& SessionId,
     {
         return Result(EWpWindowResultCode::ShuttingDown, TEXT("WindowingPlugin is shutting down."));
     }
+    if (bMovingDockPresentation)
+    {
+        return Result(EWpWindowResultCode::PresentationTransferInProgress, TEXT("A window presentation is changing."));
+    }
     FWpWindowRuntimeEntry* Entry = FindPublished(SessionId, Handle);
     if (!Entry)
     {
@@ -326,6 +329,10 @@ FWpWindowResult FWpWindowLifetimeService::SetTitle(const FGuid& SessionId,
     {
         return Result(EWpWindowResultCode::ShuttingDown, TEXT("WindowingPlugin is shutting down."));
     }
+    if (bMovingDockPresentation)
+    {
+        return Result(EWpWindowResultCode::PresentationTransferInProgress, TEXT("A window presentation is changing."));
+    }
     FWpWindowRuntimeEntry* Entry = FindPublished(SessionId, Handle);
     if (!Entry)
     {
@@ -336,7 +343,11 @@ FWpWindowResult FWpWindowLifetimeService::SetTitle(const FGuid& SessionId,
         return Result(EWpWindowResultCode::InvalidState, TEXT("Window is not open."));
     }
     TGuardValue<int32> Operation(OperationDepth, OperationDepth + 1);
-    Entry->Host->SetTitle(Title);
+    Entry->CreateOptions.Title = Title;
+    if (Entry->Host)
+    {
+        Entry->Host->SetTitle(Title);
+    }
     return Result(EWpWindowResultCode::Success);
 }
 
@@ -424,6 +435,14 @@ void FWpWindowLifetimeService::Drain()
     }
     TGuardValue<int32> Operation(OperationDepth, OperationDepth + 1);
 
+    for (const auto& Pair : DockGroups)
+    {
+        FWpDockGroup& Group = *Pair.Value;
+        if (!Group.Host && (!Group.Slot.IsValid() || !FindDockWorkspace(Group.SessionId)))
+        {
+            CloseGroupChildren(Group, EWpWindowCloseReason::HostRequest);
+        }
+    }
     TArray<FGuid> Ids;
     Entries.GenerateKeyArray(Ids);
     for (const FGuid& Id : Ids)
@@ -441,6 +460,8 @@ void FWpWindowLifetimeService::Drain()
             Entry.Host->ReleaseResources();
             Entry.Host.Reset();
         }
+        RemoveGroupMember(Entry);
+        Entry.RetainedContent.Reset();
         Record.State = Entry.bFailedCreation ? EWpWindowState::Failed : EWpWindowState::Closed;
         if (!bShuttingDown && !IsEngineExitRequested() && !Entry.bFailedCreation &&
             Record.bOpenedEventEmitted && !Record.bClosedEventEmitted)
@@ -461,12 +482,14 @@ void FWpWindowLifetimeService::Drain()
         }
         Entries.Remove(Id);
     }
+    DrainDockHosts();
 }
 
 void FWpWindowLifetimeService::BeginSessionShutdown(const FGuid& SessionId)
 {
     check(IsInGameThread());
     FocusObservers.Remove(SessionId);
+    DockWorkspaces.Remove(SessionId);
     if (bShuttingDown)
     {
         return;
@@ -497,7 +520,7 @@ void FWpWindowLifetimeService::Shutdown()
     }
     bShuttingDown = true;
     FocusObservers.Reset();
-
+    DockWorkspaces.Reset();
     {
         TGuardValue<int32> Operation(OperationDepth, OperationDepth + 1);
         TArray<FGuid> Ids;
@@ -509,7 +532,7 @@ void FWpWindowLifetimeService::Shutdown()
     }
     Drain();
     FlushPlacements();
-    if (!Entries.IsEmpty())
+    if (!Entries.IsEmpty() || !RetiringDockHosts.IsEmpty() || !DockGroups.IsEmpty())
     {
         UE_LOG(LogTemp, Fatal, TEXT("WindowingPlugin still owns windows after the terminal Slate drain."));
     }
@@ -610,7 +633,7 @@ void FWpWindowLifetimeService::TickPlacements()
     }
 
     const double Now = FPlatformTime::Seconds();
-    if (bPlacementLoaded && Now >= NextPlacementSample)
+    if (!Entries.IsEmpty() && Now >= NextPlacementSample)
     {
         NextPlacementSample = Now + 0.25;
         const TArray<FWpPlacementMonitor> Monitors = WpPlacement::ReadMonitors();
@@ -629,11 +652,16 @@ void FWpWindowLifetimeService::TickPlacements()
         {
             const TUniquePtr<FWpWindowRuntimeEntry>* Found = Entries.Find(Id);
             if (!Found || (*Found)->Record->State != EWpWindowState::Open ||
-                !(*Found)->PlacementId.IsSet() || !(*Found)->Host)
+                !(*Found)->Host)
             {
                 continue;
             }
             FWpWindowRuntimeEntry& Entry = *(*Found);
+            if (!Entry.PlacementId.IsSet())
+            {
+                Entry.bHasPlacement |= WpPlacement::Capture(Entry.Host->GetNativeHandle(), Entry.Placement);
+                continue;
+            }
             Entry.bRecoverPlacement |= bTopologyChanged;
             if (Entry.bRecoverPlacement && Entry.bHasPlacement)
             {

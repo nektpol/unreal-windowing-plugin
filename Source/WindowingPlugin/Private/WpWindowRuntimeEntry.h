@@ -4,11 +4,14 @@
 
 #include "CoreMinimal.h"
 #include "WpPlacement.h"
+#include "WpWindowTypes.h"
 #include "UObject/WeakObjectPtr.h"
 
 class UWpWindowRecord;
 class UWpWindowingSubsystem;
 class FWpNativeWindowHost;
+class SBox;
+class SWidget;
 
 struct FWpWindowRuntimeEntry final
 {
@@ -27,4 +30,8 @@ struct FWpWindowRuntimeEntry final
 	FVector2D PlacementMinimumClientSize = FVector2D::ZeroVector;
 	bool bHasPlacement = false;
 	bool bRecoverPlacement = false;
+	TSharedPtr<SWidget> RetainedContent;
+	FWpWindowCreateOptions CreateOptions;
+	FGuid DockGroupId;
+	TSharedPtr<SBox> DockContentSlot;
 };

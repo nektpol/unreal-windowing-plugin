@@ -20,6 +20,7 @@ public:
 	void ReleaseResources();
 	void* GetNativeHandle() const;
 	void MaximizeWindow();
+	void SetContent(const TSharedRef<SWidget>& Content);
 
 	bool IsSlateWindow(const SWindow* Candidate) const
 	{

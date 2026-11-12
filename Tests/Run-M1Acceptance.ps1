@@ -4,7 +4,8 @@ param(
     [ValidateSet('Development', 'Shipping')]
     [string[]] $Configuration = @('Development', 'Shipping'),
     [string] $OutputRoot = (Join-Path ([IO.Path]::GetTempPath()) ('WindowingM1-' + [guid]::NewGuid().ToString('N'))),
-    [string] $PluginPackage
+    [string] $PluginPackage,
+    [switch] $IncludeDocking
 )
 
 $ErrorActionPreference = 'Stop'
@@ -40,6 +41,9 @@ if ($PluginPackage) {
 $project = Join-Path $sample 'WindowingM1.uproject'
 Write-Host "M1 output and reports: $OutputRoot"
 
+$scenarios = @('lifecycle', 'shutdown', 'registration-rollback')
+if ($IncludeDocking) { $scenarios += 'm51' }
+
 foreach ($config in $Configuration) {
     $archive = Join-Path $OutputRoot $config
     $buildLog = Join-Path $OutputRoot "$config-package.log"
@@ -60,7 +64,7 @@ foreach ($config in $Configuration) {
         throw "Packaged game executable not found at $game"
     }
 
-    foreach ($scenario in @('lifecycle', 'shutdown', 'registration-rollback')) {
+    foreach ($scenario in $scenarios) {
         $report = Join-Path $OutputRoot "$config-$scenario.txt"
         $log = Join-Path $OutputRoot "$config-$scenario.log"
         $start = [Diagnostics.ProcessStartInfo]::new()

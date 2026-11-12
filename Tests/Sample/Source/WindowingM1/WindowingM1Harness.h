@@ -4,6 +4,7 @@
 #include "Containers/Ticker.h"
 #include "Engine/GameInstance.h"
 #include "WpWindowTypes.h"
+#include "WpDockWorkspace.h"
 #include "WindowingM1Harness.generated.h"
 
 class SButton;
@@ -36,6 +37,7 @@ class UWindowingM1GameInstance final : public UGameInstance
     void Shutdown() override;
 
     bool TickTests(float DeltaTime);
+    bool TickDockingTest();
     void OpenInitialWindows();
     void CheckInputAndRequestCloses();
     void CheckInitialCloses();
@@ -79,4 +81,12 @@ class UWindowingM1GameInstance final : public UGameInstance
     double Deadline = 0.0;
     bool bInputSent = false;
     bool bTextSent = false;
+};
+
+UCLASS()
+class UWindowingM51Workspace final : public UWpDockWorkspace
+{
+    GENERATED_BODY()
+protected:
+    TSharedRef<SWidget> RebuildWidget() override;
 };

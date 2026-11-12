@@ -1,4 +1,7 @@
 #include "WindowingM1Harness.h"
+#include "Blueprint/WidgetTree.h"
+#include "Components/VerticalBox.h"
+#include "Components/HorizontalBox.h"
 
 #include "Framework/Application/SlateApplication.h"
 #include "GameFramework/PlayerController.h"
@@ -186,6 +189,7 @@ void UWindowingM1GameInstance::OnClosed(FWpWindowClosedEvent Event)
 
 bool UWindowingM1GameInstance::TickTests(float)
 {
+    if (Scenario == TEXT("m51")) { return TickDockingTest(); }
     if (Phase == EPhase::Start)
     {
         Deadline = FPlatformTime::Seconds() + 60.0;
@@ -493,4 +497,77 @@ void UWindowingM1GameInstance::Finish()
     Report.Append(Failures);
     const bool Saved = FFileHelper::SaveStringArrayToFile(Report, *ReportPath);
     FPlatformMisc::RequestExitWithStatus(false, Saved && Failures.IsEmpty() ? 0 : 1);
+}
+
+TSharedRef<SWidget> UWindowingM51Workspace::RebuildWidget()
+{
+    UVerticalBox* Root = WidgetTree->ConstructWidget<UVerticalBox>();
+    TopDock = WidgetTree->ConstructWidget<UHorizontalBox>();
+    BottomDock = WidgetTree->ConstructWidget<UHorizontalBox>();
+    LeftDock = WidgetTree->ConstructWidget<UVerticalBox>();
+    RightDock = WidgetTree->ConstructWidget<UVerticalBox>();
+    Root->AddChild(TopDock);
+    Root->AddChild(LeftDock);
+    Root->AddChild(RightDock);
+    Root->AddChild(BottomDock);
+    WidgetTree->RootWidget = Root;
+    return Super::RebuildWidget();
+}
+
+bool UWindowingM1GameInstance::TickDockingTest()
+{
+    UWpWindowingSubsystem* Subsystem = GetSubsystem<UWpWindowingSubsystem>();
+    if (Phase == EPhase::Start)
+    {
+        Deadline = FPlatformTime::Seconds() + 20.0;
+        UWindowingM51Workspace* Workspace = CreateWidget<UWindowingM51Workspace>(this);
+        Workspace->AddToViewport();
+        Expect(Subsystem->RegisterDockWorkspace(Workspace).IsSuccess(), TEXT("Register workspace"));
+        Subsystem->OnWindowOpened.AddDynamic(this, &ThisClass::OnOpened);
+        Subsystem->OnWindowClosed.AddDynamic(this, &ThisClass::OnClosed);
+        A = Open(Subsystem, TEXT("M51 A"));
+        const auto WidgetA = UWindowingM1Widget::LastBuilt;
+        B = Open(Subsystem, TEXT("M51 B"));
+        if (WidgetA.IsValid())
+        {
+            WidgetA->Clicks = 17;
+        }
+        for (const EWpDockSide Side : { EWpDockSide::Left, EWpDockSide::Top, EWpDockSide::Bottom })
+        {
+            Expect(Subsystem->DockWindow(A, Side).IsSuccess() &&
+                Subsystem->GetWindowPresentation(A).Side == Side, TEXT("Dock panel on edge"));
+            Expect(Subsystem->UndockWindow(A).IsSuccess() &&
+                Subsystem->GetWindowPresentation(A).Mode == EWpWindowPresentationMode::Floating,
+                TEXT("Undock individual panel"));
+        }
+        Expect(Subsystem->DockWindow(A, EWpDockSide::Right).IsSuccess() &&
+            Subsystem->DockWindow(B, EWpDockSide::Right).IsSuccess(), TEXT("Dock a two-child group"));
+        const FGuid Group = Subsystem->GetWindowPresentation(A).GroupId;
+        Expect(Group.IsValid() && Group == Subsystem->GetWindowPresentation(B).GroupId, TEXT("Shared group ID"));
+        Expect(Subsystem->UndockGroup(Group).IsSuccess() && FindWindow(TEXT("Right Docker")) &&
+            Subsystem->GetWindowPresentation(B).Mode == EWpWindowPresentationMode::InFloatingGroup,
+            TEXT("Float both children in one host"));
+        Expect(Subsystem->DockGroup(Group).IsSuccess() &&
+            Subsystem->GetWindowPresentation(A).GroupId == Group &&
+            Subsystem->GetWindowPresentation(A).Mode == EWpWindowPresentationMode::Docked,
+            TEXT("Dock the original group back"));
+        Expect(WidgetA.IsValid() && WidgetA->Clicks == 17 && Opened.Num() == 2 && Closed.IsEmpty(),
+            TEXT("Preserve widget instance and logical lifecycle"));
+        Close(A);
+        Close(B);
+        Phase = EPhase::InitialCloses;
+    }
+    else if (Closed.Num() == 2 || FPlatformTime::Seconds() > Deadline)
+    {
+        Expect(Closed.Num() == 2 && !Subsystem->IsWindowOpen(A) && !Subsystem->IsWindowOpen(B),
+            TEXT("Close both docked members once"));
+        Finish();
+        return false;
+    }
+    if (!Failures.IsEmpty())
+    {
+        Finish();
+        return false;
+    }
+    return true;
 }
