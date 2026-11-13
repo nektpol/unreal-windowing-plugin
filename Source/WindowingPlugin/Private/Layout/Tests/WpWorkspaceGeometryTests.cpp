@@ -71,4 +71,64 @@ bool FWpWorkspaceResizeTest::RunTest(const FString&)
         FMath::IsNearlyEqual(Layout[ERegion::Center].Size.X, 320.0));
     return true;
 }
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FWpWorkspaceCornerTest, "WindowingPlugin.M53.Corners",
+    EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FWpWorkspaceCornerTest::RunTest(const FString&)
+{
+    using namespace WpWorkspaceLayout;
+    FInput Input;
+    Input.Viewport = FVector2D(960, 640);
+    Input.Top = 160;
+    Input.Right = 240;
+    const FLayout Default = Resolve(Input);
+    TestEqual(TEXT("Right owns the top corner by default"), Default[ERegion::Right].Position.Y, 0.0);
+    TestEqual(TEXT("Top stops at Right by default"), Default[ERegion::Top].Size.X, 720.0);
+
+    Input.bTopOwnsRight = true;
+    const FLayout Expanded = Resolve(Input);
+    TestEqual(TEXT("Top reaches the right boundary"), Expanded[ERegion::Top].Size.X, 960.0);
+    TestEqual(TEXT("Right starts below Top"), Expanded[ERegion::Right].Position.Y, 160.0);
+    TestEqual(TEXT("Center remains bounded"), Expanded[ERegion::Center].Size, Default[ERegion::Center].Size);
+
+    Input.bTopOwnsRight = false;
+    TestEqual(TEXT("Restoring ownership restores Right's position"),
+        Resolve(Input)[ERegion::Right].Position, Default[ERegion::Right].Position);
+    Input.Top = 0;
+    TestEqual(TEXT("Right reclaims the corner when Top disappears"), Resolve(Input)[ERegion::Right].Position.Y, 0.0);
+
+    for (int32 Occupancy = 0; Occupancy < 16; ++Occupancy)
+    {
+        Input.Left = Occupancy & 1 ? 240 : 0;
+        Input.Right = Occupancy & 2 ? 240 : 0;
+        Input.Top = Occupancy & 4 ? 160 : 0;
+        Input.Bottom = Occupancy & 8 ? 160 : 0;
+        for (int32 Corners = 0; Corners < 16; ++Corners)
+        {
+            Input.bTopOwnsLeft = (Corners & 1) != 0;
+            Input.bTopOwnsRight = (Corners & 2) != 0;
+            Input.bBottomOwnsLeft = (Corners & 4) != 0;
+            Input.bBottomOwnsRight = (Corners & 8) != 0;
+            const FLayout Layout = Resolve(Input);
+            for (int32 A = 0; A < static_cast<int32>(ERegion::Count); ++A)
+            {
+                const FRegion& First = Layout.Regions[A];
+                for (int32 B = A + 1; B < static_cast<int32>(ERegion::Count); ++B)
+                {
+                    const FRegion& Second = Layout.Regions[B];
+                    const FVector2D EndA = First.Position + First.Size;
+                    const FVector2D EndB = Second.Position + Second.Size;
+                    const bool bOverlap = FMath::Min(EndA.X, EndB.X) > FMath::Max(First.Position.X, Second.Position.X)
+                        && FMath::Min(EndA.Y, EndB.Y) > FMath::Max(First.Position.Y, Second.Position.Y);
+                    if (bOverlap)
+                    {
+                        AddError(FString::Printf(TEXT("Regions overlap for occupancy %d, corners %d"), Occupancy, Corners));
+                        return false;
+                    }
+                }
+            }
+        }
+    }
+    return true;
+}
 #endif

@@ -11,6 +11,7 @@
 #include "Widgets/Layout/SBox.h"
 #include "Widgets/SNullWidget.h"
 #include "Widgets/Input/SEditableTextBox.h"
+#include "WpDockLayoutPanel.h"
 
 namespace
 {
@@ -713,6 +714,20 @@ FWpDockFrame FWpWindowLifetimeService::BuildGroupFrame(
         }
     };
 
+    const auto ResolveTopLayout = [SessionId](FWpWindowLifetimeService& Service, const FWpDockGroup& Group)
+        -> UWpDockLayoutPanel*
+    {
+        if (Service.bMovingDockPresentation || Group.Host || Group.Side != EWpDockSide::Top ||
+            !Service.CanMoveGroup(Group) || Service.FindEdgeGroup(SessionId, EWpDockSide::Top) != &Group ||
+            !Service.FindDockWorkspace(SessionId))
+        {
+            return nullptr;
+        }
+        auto* Slot = Group.Slot.Get();
+        auto* Edge = Slot ? Slot->GetParent() : nullptr;
+        return Edge ? Cast<UWpDockLayoutPanel>(Edge->GetParent()) : nullptr;
+    };
+
     FWpDockFrame Frame = WpBuildDockFrame(TAttribute<FText>::CreateLambda([WithGroup]
         {
             FText Title;
@@ -743,7 +758,7 @@ FWpDockFrame FWpWindowLifetimeService::BuildGroupFrame(
                 }
             });
         }),
-        [WithGroup, SessionId, GroupId]
+        [WithGroup, ResolveTopLayout, SessionId, GroupId]
         {
             TArray<FWpDockMenuAction> Actions;
             WithGroup([&](auto& Service, const auto& Group)
@@ -757,6 +772,21 @@ FWpDockFrame FWpWindowLifetimeService::BuildGroupFrame(
                             WithGroup([&](auto& Current, auto&)
                             {
                                 Current.MoveGroup(SessionId, GroupId, bFloat);
+                            });
+                        })});
+                }
+                if (const auto* Layout = ResolveTopLayout(Service, Group))
+                {
+                    const bool bExpand = !Layout->DoesTopOwnRightCorner();
+                    Actions.Add({bExpand ? INVTEXT("Expand Right") : INVTEXT("Restore Right Corner"),
+                        FSimpleDelegate::CreateLambda([WithGroup, ResolveTopLayout, bExpand]
+                        {
+                            WithGroup([&](auto& Current, const auto& CurrentGroup)
+                            {
+                                if (auto* CurrentLayout = ResolveTopLayout(Current, CurrentGroup))
+                                {
+                                    CurrentLayout->SetTopOwnsRightCorner(bExpand);
+                                }
                             });
                         })});
                 }

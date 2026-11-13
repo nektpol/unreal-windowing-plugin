@@ -16,6 +16,9 @@ public:
 	UWpDockLayoutPanel(const FObjectInitializer& ObjectInitializer);
 	void ReleaseSlateResources(bool bReleaseChildren) override;
 
+	bool DoesTopOwnRightCorner() const;
+	void SetTopOwnsRightCorner(bool bOwnsCorner);
+
 	UPROPERTY(EditAnywhere, Category="Dock Layout")
 	FVector2D CenterMinimum = FVector2D(320, 180);
 
@@ -36,6 +39,7 @@ protected:
 	void OnSlotRemoved(UPanelSlot* Slot) override;
 
 private:
+	bool bTopOwnsRightCorner = false;
 	void RefreshRegions();
 	TSharedPtr<SWpDockLayoutPanel> LayoutPanel;
 };

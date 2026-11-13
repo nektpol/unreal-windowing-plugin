@@ -16,6 +16,10 @@ namespace WpWorkspaceLayout
         double Right = 0;
         double Top = 0;
         double Bottom = 0;
+        bool bTopOwnsLeft = false;
+        bool bTopOwnsRight = false;
+        bool bBottomOwnsLeft = false;
+        bool bBottomOwnsRight = false;
     };
 
     struct FRegion
@@ -83,12 +87,30 @@ namespace WpWorkspaceLayout
 
         const double MiddleWidth = FMath::Max(0.0, Width - Left - Right);
         const double MiddleHeight = FMath::Max(0.0, Height - Top - Bottom);
+
+        const bool bTopLeft = Top > 0.0 && (Left == 0.0 || Input.bTopOwnsLeft);
+        const bool bTopRight = Top > 0.0 && (Right == 0.0 || Input.bTopOwnsRight);
+        const bool bBottomLeft = Bottom > 0.0 && (Left == 0.0 || Input.bBottomOwnsLeft);
+        const bool bBottomRight = Bottom > 0.0 && (Right == 0.0 || Input.bBottomOwnsRight);
+
+        const double LeftStart = bTopLeft ? Top : 0.0;
+        const double LeftEnd = Height - (bBottomLeft ? Bottom : 0.0);
+        const double RightStart = bTopRight ? Top : 0.0;
+        const double RightEnd = Height - (bBottomRight ? Bottom : 0.0);
+        const double TopStart = bTopLeft ? 0.0 : Left;
+        const double TopEnd = Width - (bTopRight ? 0.0 : Right);
+        const double BottomStart = bBottomLeft ? 0.0 : Left;
+        const double BottomEnd = Width - (bBottomRight ? 0.0 : Right);
+
         FLayout Layout;
-        Layout.Regions[static_cast<int32>(ERegion::Left)] = {{0, 0}, {Left, Height}};
-        Layout.Regions[static_cast<int32>(ERegion::Right)] = {{Width - Right, 0}, {Right, Height}};
-        Layout.Regions[static_cast<int32>(ERegion::Top)] = {{Left, 0}, {MiddleWidth, Top}};
+        Layout.Regions[static_cast<int32>(ERegion::Left)] =
+            {{0, LeftStart}, {Left, FMath::Max(0.0, LeftEnd - LeftStart)}};
+        Layout.Regions[static_cast<int32>(ERegion::Right)] =
+            {{Width - Right, RightStart}, {Right, FMath::Max(0.0, RightEnd - RightStart)}};
+        Layout.Regions[static_cast<int32>(ERegion::Top)] =
+            {{TopStart, 0}, {FMath::Max(0.0, TopEnd - TopStart), Top}};
         Layout.Regions[static_cast<int32>(ERegion::Bottom)] =
-            {{Left, Height - Bottom}, {MiddleWidth, Bottom}};
+            {{BottomStart, Height - Bottom}, {FMath::Max(0.0, BottomEnd - BottomStart), Bottom}};
         Layout.Regions[static_cast<int32>(ERegion::Center)] =
             {{Left, Top}, {MiddleWidth, MiddleHeight}};
         return Layout;

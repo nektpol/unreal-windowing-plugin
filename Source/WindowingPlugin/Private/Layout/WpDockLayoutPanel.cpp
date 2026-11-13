@@ -68,6 +68,17 @@ public:
         Sources.Add(&Source);
     }
 
+    void SetTopOwnsRightCorner(bool bOwnsCorner)
+    {
+        if (Preferred.bTopOwnsRight == bOwnsCorner)
+        {
+            return;
+        }
+        CancelResize();
+        Preferred.bTopOwnsRight = bOwnsCorner;
+        Invalidate(EInvalidateWidgetReason::Layout);
+    }
+
     void SetSizes(FVector2D CenterMinimum, FVector2D SideWidths, FVector2D RowHeights)
     {
         Preferred.CenterMinimum = CenterMinimum;
@@ -296,17 +307,26 @@ private:
             return;
         }
 
+        const FRegion& Center = Layout[ERegion::Center];
         FVector2D Position = Region.Position;
         FVector2D Size = Region.Size;
         if (IsSide(Edge))
         {
+            Position.Y = FMath::Max(Region.Position.Y, Center.Position.Y);
+            Size.Y = FMath::Min(Region.Position.Y + Region.Size.Y, Center.Position.Y + Center.Size.Y) - Position.Y;
             Size.X = FMath::Min(GripWidth, Size.X);
             if (Edge == ERegion::Left) { Position.X += Region.Size.X - Size.X; }
         }
         else
         {
+            Position.X = FMath::Max(Region.Position.X, Center.Position.X);
+            Size.X = FMath::Min(Region.Position.X + Region.Size.X, Center.Position.X + Center.Size.X) - Position.X;
             Size.Y = FMath::Min(GripWidth, Size.Y);
             if (Edge == ERegion::Top) { Position.Y += Region.Size.Y - Size.Y; }
+        }
+        if (Size.X <= 0 || Size.Y <= 0)
+        {
+            return;
         }
         Arranged.AddWidget(Geometry.MakeChild(Grips[static_cast<int32>(Edge)], Size,
             FSlateLayoutTransform(FVector2f(Position))));
@@ -344,9 +364,24 @@ void UWpDockLayoutPanel::ReleaseSlateResources(bool bReleaseChildren)
     LayoutPanel.Reset();
 }
 
+bool UWpDockLayoutPanel::DoesTopOwnRightCorner() const
+{
+    return bTopOwnsRightCorner;
+}
+
+void UWpDockLayoutPanel::SetTopOwnsRightCorner(bool bOwnsCorner)
+{
+    bTopOwnsRightCorner = bOwnsCorner;
+    if (LayoutPanel)
+    {
+        LayoutPanel->SetTopOwnsRightCorner(bOwnsCorner);
+    }
+}
+
 TSharedRef<SWidget> UWpDockLayoutPanel::RebuildWidget()
 {
     LayoutPanel = SNew(SWpDockLayoutPanel);
+    LayoutPanel->SetTopOwnsRightCorner(bTopOwnsRightCorner);
     LayoutPanel->SetSizes(CenterMinimum, PreferredSideWidths, PreferredRowHeights);
     RefreshRegions();
     return LayoutPanel.ToSharedRef();
