@@ -373,3 +373,20 @@ FWpWindowResult UWpWindowingSubsystem::SetWindowCollapsed(
 	}
 	return WpWindowingSubsystemPrivate::Unavailable();
 }
+
+FWpWindowResult UWpWindowingSubsystem::NestAdjacentDockPanels(
+	FWpWindowHandle First, FWpWindowHandle Second)
+{
+	if (!IsInGameThread())
+	{
+		return WpWindowingSubsystemPrivate::WrongThread();
+	}
+	if (!bDeinitializing && SessionId.IsValid() && !IsEngineExitRequested())
+	{
+		if (FWpWindowLifetimeService* Service = WpGetWindowLifetimeService())
+		{
+			return Service->NestAdjacentDockPanels(SessionId, First, Second);
+		}
+	}
+	return WpWindowingSubsystemPrivate::Unavailable();
+}

@@ -98,6 +98,9 @@ public:
 	UFUNCTION(BlueprintCallable, Category="Windowing")
 	FWpWindowResult SetWindowCollapsed(FWpWindowHandle Handle, bool bCollapsed);
 
+	UFUNCTION(BlueprintCallable, Category="Windowing")
+	FWpWindowResult NestAdjacentDockPanels(FWpWindowHandle First, FWpWindowHandle Second);
+
 private:
 	friend class FWpWindowLifetimeService;
 

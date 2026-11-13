@@ -42,7 +42,7 @@ $project = Join-Path $sample 'WindowingM1.uproject'
 Write-Host "M1 output and reports: $OutputRoot"
 
 $scenarios = @('lifecycle', 'shutdown', 'registration-rollback')
-if ($IncludeDocking) { $scenarios += @('m51', 'm52') }
+if ($IncludeDocking) { $scenarios += @('m51', 'm52', 'm535') }
 
 foreach ($config in $Configuration) {
     $archive = Join-Path $OutputRoot $config

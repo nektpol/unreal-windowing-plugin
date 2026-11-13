@@ -6,18 +6,21 @@
 #include "Layout/Children.h"
 #include "Widgets/SPanel.h"
 
+class SBox;
+
 class SWpGroupSplit final : public SPanel
 {
 public:
 	SLATE_BEGIN_ARGS(SWpGroupSplit) {}
-		SLATE_ARGUMENT(bool, Horizontal)
-	SLATE_END_ARGS()
+	SLATE_ARGUMENT(bool, Horizontal)
+SLATE_END_ARGS()
 
-	SWpGroupSplit();
+SWpGroupSplit();
 	void Construct(const FArguments& Args);
 	void AddPanel(FGuid Id, const TSharedRef<SWidget>& Widget, bool bCollapsed);
 	void RemovePanel(FGuid Id);
 	void SetPanelCollapsed(FGuid Id, bool bCollapsed);
+	bool NestAdjacent(FGuid First, FGuid Second);
 	void CancelResize();
 
 	FChildren* GetChildren() override;
@@ -31,10 +34,11 @@ private:
 	struct FMember
 	{
 		FGuid Id;
-		TSharedRef<SWidget> Widget;
+		TSharedRef<SBox> Widget;
 		TSharedRef<SWidget> Grip;
 		double Weight = 1.0;
 		bool bCollapsed = false;
+		TSharedPtr<SWpGroupSplit> Branch;
 	};
 
 	struct FDrag
@@ -52,6 +56,7 @@ private:
 	static constexpr double PanelMinimum = 96.0;
 
 	void RebuildChildren();
+	int32 FindMember(FGuid Id) const;
 	bool HasGrip(int32 Index) const;
 	double Axis(FVector2D Size) const;
 	double Minimum(const FMember& Member) const;

@@ -50,6 +50,7 @@ public:
 
 	FWpWindowResult RenameDockGroup(const FGuid& SessionId, FGuid GroupId, const FText& Title);
 	FWpWindowResult SetWindowCollapsed(const FGuid& SessionId, FWpWindowHandle Handle, bool bCollapsed);
+	FWpWindowResult NestAdjacentDockPanels(const FGuid& SessionId, FWpWindowHandle First, FWpWindowHandle Second);
 
 private:
 	struct FCallbackTarget

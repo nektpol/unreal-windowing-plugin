@@ -49,4 +49,32 @@ bool FWpGroupSplitTest::RunTest(const FString&)
     }
     return true;
 }
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FWpNestedGroupSplitTest, "WindowingPlugin.M53.NestedGroupSplit",
+    EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FWpNestedGroupSplitTest::RunTest(const FString&)
+{
+    const auto Split = SNew(SWpGroupSplit).Horizontal(false);
+    const FGuid A = FGuid::NewGuid();
+    const FGuid B = FGuid::NewGuid();
+    const FGuid C = FGuid::NewGuid();
+    const auto First = SNew(SBox).WidthOverride(40).HeightOverride(40);
+    const auto Second = SNew(SBox).WidthOverride(40).HeightOverride(40);
+    Split->AddPanel(A, First, false);
+    Split->AddPanel(B, Second, false);
+    Split->AddPanel(C, SNew(SBox), false);
+    TestFalse(TEXT("Non-adjacent panels cannot nest"), Split->NestAdjacent(A, C));
+    TestTrue(TEXT("Adjacent panels form a nested split"), Split->NestAdjacent(B, A));
+    TestEqual(TEXT("Root contains a branch and a leaf"), Split->GetChildren()->Num(), 4);
+    TestTrue(TEXT("Original widget remains attached"), First->GetParentWidget().IsValid());
+
+    Split->SetPanelCollapsed(A, true);
+    Split->RemovePanel(A);
+    TestEqual(TEXT("Single remaining child promotes into the root"), Split->GetChildren()->Num(), 4);
+    TestTrue(TEXT("Promoted panel can nest again"), Split->NestAdjacent(B, C));
+    Split->RemovePanel(B);
+    Split->RemovePanel(C);
+    TestEqual(TEXT("Removing the last leaf empties the tree"), Split->GetChildren()->Num(), 0);
+    return true;
+}
 #endif

@@ -190,7 +190,7 @@ void UWindowingM1GameInstance::OnClosed(FWpWindowClosedEvent Event)
 bool UWindowingM1GameInstance::TickTests(float)
 {
     if (Scenario == TEXT("m51")) { return TickDockingTest(); }
-    if (Scenario == TEXT("m52")) { return TickCollapseTest(); }
+    if (Scenario == TEXT("m52") || Scenario == TEXT("m535")) { return TickCollapseTest(); }
     if (Phase == EPhase::Start)
     {
         Deadline = FPlatformTime::Seconds() + 60.0;
@@ -625,6 +625,17 @@ bool UWindowingM1GameInstance::TickCollapseTest()
                 TEXT("Individually floating panel rejects collapse without publishing an event"));
             Expect(Subsystem->DockWindow(A, Side).IsSuccess() &&
                 Subsystem->DockWindow(B, Side).IsSuccess(), TEXT("Dock both panels on the test edge"));
+            if (Scenario == TEXT("m535"))
+            {
+                const FGuid GroupBefore = Subsystem->GetWindowPresentation(A).GroupId;
+                Expect(Subsystem->NestAdjacentDockPanels(A, A).Code == EWpWindowResultCode::InvalidState,
+                    TEXT("A panel cannot be nested with itself"));
+                Expect(Subsystem->NestAdjacentDockPanels(B, A).IsSuccess() &&
+                    Subsystem->GetWindowPresentation(A).GroupId == GroupBefore &&
+                    Subsystem->GetWindowPresentation(B).GroupId == GroupBefore &&
+                    Subsystem->GetWidgetFromHandle(A) == Panel,
+                    TEXT("Nest adjacent siblings without changing their group or widget identity"));
+            }
             const int32 BeforeCollapse = PresentationChanges;
             Expect(Subsystem->SetWindowCollapsed(A, true).IsSuccess() && IsCollapsed(A) &&
                 !IsCollapsed(B) && PresentationChanges == BeforeCollapse + 1,

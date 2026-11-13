@@ -9,6 +9,8 @@
 #include "Layout/ArrangedChildren.h"
 #include "Widgets/Layout/SBorder.h"
 #include "Widgets/Layout/SBox.h"
+#include "Widgets/Layout/SScrollBox.h"
+#include "Widgets/SNullWidget.h"
 
 SWpGroupSplit::SWpGroupSplit() : Children(this) {}
 
@@ -34,30 +36,145 @@ void SWpGroupSplit::AddPanel(FGuid Id, const TSharedRef<SWidget>& Widget, bool b
     Grip->SetCursor(TOptional<EMouseCursor::Type>(
         bHorizontal ? EMouseCursor::ResizeLeftRight : EMouseCursor::ResizeUpDown));
     const auto Clip = SNew(SBox).Clipping(EWidgetClipping::ClipToBoundsAlways)[Widget];
-    Members.Add({Id, Clip, Grip, 1.0, bCollapsed});
+    Members.Add({Id, Clip, Grip, 1.0, bCollapsed, nullptr});
     RebuildChildren();
+}
+
+int32 SWpGroupSplit::FindMember(FGuid Id) const
+{
+    return Members.IndexOfByPredicate([Id](const FMember& Member) { return Member.Id == Id; });
+}
+
+bool SWpGroupSplit::NestAdjacent(FGuid First, FGuid Second)
+{
+    const int32 Index = FindMember(First);
+    if (Index == INDEX_NONE)
+    {
+        for (const FMember& Member : Members)
+        {
+            if (Member.Branch && Member.Branch->NestAdjacent(First, Second))
+            {
+                CancelResize();
+                return true;
+            }
+        }
+        return false;
+    }
+    const int32 Next = FindMember(Second);
+    if (Next == INDEX_NONE || FMath::Abs(Index - Next) != 1 ||
+        Members[Index].Branch || Members[Next].Branch)
+    {
+        return false;
+    }
+
+    CancelResize();
+    const int32 Start = FMath::Min(Index, Next);
+    FMember& A = Members[Start];
+    FMember& B = Members[Start + 1];
+    const double OuterWeight = A.Weight + B.Weight;
+    const auto FirstContent = A.Widget->GetChildren()->GetChildAt(0);
+    const auto SecondContent = B.Widget->GetChildren()->GetChildAt(0);
+    A.Widget->SetContent(SNullWidget::NullWidget);
+    B.Widget->SetContent(SNullWidget::NullWidget);
+
+    const auto Nested = SNew(SWpGroupSplit).Horizontal(!bHorizontal);
+    Nested->AddPanel(A.Id, FirstContent, A.bCollapsed);
+    Nested->AddPanel(B.Id, SecondContent, B.bCollapsed);
+    const auto Scroll = SNew(SScrollBox)
+        .Orientation(bHorizontal ? Orient_Vertical : Orient_Horizontal)
+        .ConsumeMouseWheel(EConsumeMouseWheel::WhenScrollingPossible)
+        + SScrollBox::Slot().FillContentSize(1.f)
+        [
+            Nested
+        ];
+
+    // Use a fresh member ID for the branch and create its divider through AddPanel.
+    Members.RemoveAt(Start, 2);
+    AddPanel(FGuid::NewGuid(), Scroll, false);
+    FMember Branch = Members.Pop();
+    Branch.Branch = Nested;
+    Branch.Weight = OuterWeight;
+    Members.Insert(MoveTemp(Branch), Start);
+    RebuildChildren();
+    return true;
 }
 
 void SWpGroupSplit::RemovePanel(FGuid Id)
 {
     CancelResize();
-    Members.RemoveAll([Id](const FMember& Member) { return Member.Id == Id; });
-    RebuildChildren();
+    const int32 Index = FindMember(Id);
+    if (Index != INDEX_NONE)
+    {
+        Members.RemoveAt(Index);
+        RebuildChildren();
+        return;
+    }
+
+    for (int32 BranchIndex = 0; BranchIndex < Members.Num(); ++BranchIndex)
+    {
+        FMember& Member = Members[BranchIndex];
+        const auto Nested = Member.Branch;
+        if (!Nested)
+        {
+            continue;
+        }
+        Nested->RemovePanel(Id);
+        if (Nested->Members.IsEmpty())
+        {
+            Members.RemoveAt(BranchIndex--);
+            RebuildChildren();
+        }
+        else if (Nested->Members.Num() == 1 && !Nested->Members[0].Branch)
+        {
+            FMember Remaining = Nested->Members.Pop();
+            Nested->RebuildChildren();
+            // Recreate the grip so its weak callback targets this split.
+            const double Weight = Member.Weight;
+            const auto Content = Remaining.Widget->GetChildren()->GetChildAt(0);
+            Remaining.Widget->SetContent(SNullWidget::NullWidget);
+            Members.RemoveAt(BranchIndex);
+            AddPanel(Remaining.Id, Content, Remaining.bCollapsed);
+            FMember Promoted = Members.Pop();
+            Promoted.Weight = Weight;
+            Members.Insert(MoveTemp(Promoted), BranchIndex);
+            RebuildChildren();
+        }
+    }
 }
 
 void SWpGroupSplit::SetPanelCollapsed(FGuid Id, bool bCollapsed)
 {
-    auto* Member = Members.FindByPredicate([Id](const FMember& Item) { return Item.Id == Id; });
-    if (Member && Member->bCollapsed != bCollapsed)
+    const int32 Index = FindMember(Id);
+    if (Index != INDEX_NONE)
     {
-        CancelResize();
-        Member->bCollapsed = bCollapsed;
-        Invalidate(EInvalidateWidgetReason::Layout);
+        auto& Member = Members[Index];
+        if (Member.bCollapsed != bCollapsed)
+        {
+            CancelResize();
+            Member.bCollapsed = bCollapsed;
+            Invalidate(EInvalidateWidgetReason::Layout);
+        }
+        return;
+    }
+    CancelResize();
+    for (const FMember& Member : Members)
+    {
+        if (Member.Branch)
+        {
+            Member.Branch->SetPanelCollapsed(Id, bCollapsed);
+        }
     }
 }
 
 void SWpGroupSplit::CancelResize()
 {
+    for (const FMember& Member : Members)
+    {
+        if (Member.Branch)
+        {
+            Member.Branch->CancelResize();
+        }
+    }
     if (Drag.IsSet())
     {
         const FDrag Previous = Drag.GetValue();

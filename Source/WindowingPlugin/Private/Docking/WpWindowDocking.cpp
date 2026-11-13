@@ -841,3 +841,29 @@ FWpWindowResult FWpWindowLifetimeService::RenameDockGroup(const FGuid& SessionId
     }
     return DockResult(EWpWindowResultCode::Success);
 }
+
+FWpWindowResult FWpWindowLifetimeService::NestAdjacentDockPanels(
+    const FGuid& SessionId, FWpWindowHandle First, FWpWindowHandle Second)
+{
+    if (bMovingDockPresentation)
+    {
+        return DockResult(EWpWindowResultCode::PresentationTransferInProgress);
+    }
+    const auto* A = FindPublished(SessionId, First);
+    const auto* B = FindPublished(SessionId, Second);
+    if (!A || !B)
+    {
+        return DockResult(EWpWindowResultCode::NotFound);
+    }
+    const auto* Group = DockGroups.Find(A->DockGroupId);
+    if (!Group || A->DockGroupId != B->DockGroupId || !CanMoveGroup(*(*Group)))
+    {
+        return DockResult(EWpWindowResultCode::InvalidState);
+    }
+
+    TGuardValue<int32> Operation(OperationDepth, OperationDepth + 1);
+    TGuardValue<bool> Transfer(bMovingDockPresentation, true);
+    return (*Group)->Content->NestAdjacent(First.Id, Second.Id)
+        ? DockResult(EWpWindowResultCode::Success)
+        : DockResult(EWpWindowResultCode::InvalidState, TEXT("Choose two adjacent panels in the same split."));
+}

@@ -15,3 +15,7 @@ Create a Widget Blueprint derived from **Wp Dock Workspace**. The inherited bind
 For bounded viewport sizing, put the four boxes and a widget named **Center** directly inside a **Dock Layout Panel** that fills the workspace. The panel exposes the preferred edge sizes and the minimum center size in Slate units. Add the workspace to the viewport, then call **Register Dock Workspace** with that instance.
 
 Use a panel's Settings menu to dock it to an edge or undock it. The group Settings menu can float the whole group, return it to the workspace, or rename it. Use the panel or group header to collapse and expand it where the command is available. Docked panels remain open, and their handles and widget references remain valid during transfers.
+
+Drag the inside edge of a dock to resize its viewport region. Drag a divider between expanded panels to resize the panels within their group. Scroll along the group's axis when the panels need more space. Use **Expand Right** or **Restore Right Corner** in the docked Top group's Settings to choose which edge owns the top-right corner.
+
+In Blueprint, call **Nest Adjacent Dock Panels** with two neighboring panel handles in the same split to create a child split on the perpendicular axis. The group keeps the existing panel widgets, handles, and order. Floating the group and returning it preserves the nested layout.
