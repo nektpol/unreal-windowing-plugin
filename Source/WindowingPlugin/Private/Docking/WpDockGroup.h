@@ -4,7 +4,7 @@
 #include "Presentation/WpDockHeader.h"
 #include "Presentation/WpNativeWindowHost.h"
 #include "Components/NativeWidgetHost.h"
-#include "Widgets/SBoxPanel.h"
+#include "Layout/SWpGroupSplit.h"
 
 struct FWpDockGroup
 {
@@ -12,7 +12,7 @@ struct FWpDockGroup
 	FGuid SessionId;
 	EWpDockSide Side = EWpDockSide::Left;
 	FText Title;
-	TSharedPtr<SBoxPanel> Content;
+	TSharedPtr<SWpGroupSplit> Content;
 	TArray<FGuid> Children;
 	TWeakObjectPtr<UNativeWidgetHost> Slot;
 	TUniquePtr<FWpNativeWindowHost> Host;

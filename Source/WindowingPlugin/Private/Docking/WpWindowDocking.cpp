@@ -12,6 +12,7 @@
 #include "Widgets/SNullWidget.h"
 #include "Widgets/Input/SEditableTextBox.h"
 #include "WpDockLayoutPanel.h"
+#include "Widgets/Layout/SScrollBox.h"
 
 namespace
 {
@@ -222,14 +223,7 @@ void FWpWindowLifetimeService::RemoveGroupMember(FWpWindowRuntimeEntry& Entry)
         if (Entry.DockContentSlot)
         {
             Entry.DockContentSlot->SetContent(SNullWidget::NullWidget);
-            if (IsHorizontal(Group->Side))
-            {
-                StaticCastSharedPtr<SHorizontalBox>(Group->Content)->RemoveSlot(Entry.DockFrame.Root.ToSharedRef());
-            }
-            else
-            {
-                StaticCastSharedPtr<SVerticalBox>(Group->Content)->RemoveSlot(Entry.DockFrame.Root.ToSharedRef());
-            }
+            Group->Content->RemovePanel(Entry.Record->WindowId);
         }
         Group->Children.Remove(Entry.Record->WindowId);
         if (Group->Children.IsEmpty())
@@ -239,8 +233,6 @@ void FWpWindowLifetimeService::RemoveGroupMember(FWpWindowRuntimeEntry& Entry)
             RetireDockHost(MoveTemp(Group->Host), Group->bNativeClosing);
         }
     }
-    Entry.DockHorizontalSlot = nullptr;
-    Entry.DockVerticalSlot = nullptr;
     Entry.DockFrame = {};
     Entry.DockContentSlot.Reset();
     Entry.DockGroupId.Invalidate();
@@ -288,15 +280,16 @@ FWpWindowResult FWpWindowLifetimeService::DockWindow(
             NewGroup->Side = Side;
             NewGroup->Title = FText::Format(NSLOCTEXT("WindowingPlugin", "DockTitle", "{0} Docker"),
                 StaticEnum<EWpDockSide>()->GetDisplayNameTextByValue(static_cast<int64>(Side)));
-            if (IsHorizontal(Side))
-            {
-                NewGroup->Content = SNew(SHorizontalBox);
-            }
-            else
-            {
-                NewGroup->Content = SNew(SVerticalBox);
-            }
-            NewGroup->Frame = BuildGroupFrame(SessionId, NewGroup->Id, NewGroup->Content.ToSharedRef());
+            const bool bHorizontal = IsHorizontal(Side);
+            NewGroup->Content = SNew(SWpGroupSplit).Horizontal(bHorizontal);
+            const auto Scroll = SNew(SScrollBox)
+                .Orientation(bHorizontal ? Orient_Horizontal : Orient_Vertical)
+                .ConsumeMouseWheel(EConsumeMouseWheel::WhenScrollingPossible)
+                + SScrollBox::Slot().FillContentSize(1.f)
+                [
+                    NewGroup->Content.ToSharedRef()
+                ];
+            NewGroup->Frame = BuildGroupFrame(SessionId, NewGroup->Id, Scroll);
 
             UNativeWidgetHost* Slot = Workspace->AddDockSlot(Side);
             if (!Slot || FindDockWorkspace(SessionId) != Workspace ||
@@ -331,20 +324,9 @@ FWpWindowResult FWpWindowLifetimeService::DockWindow(
         const TSharedRef<SBox> Slot = SNew(SBox)[Entry->RetainedContent.ToSharedRef()];
         Entry->DockContentSlot = Slot;
         Entry->DockFrame = BuildPanelFrame(SessionId, Handle, Slot, false);
-        if (IsHorizontal(Side))
-        {
-            StaticCastSharedPtr<SHorizontalBox>(Group->Content)->AddSlot()
-                .Expose(Entry->DockHorizontalSlot)
-                .FillWidth(1.f)[Entry->DockFrame.Root.ToSharedRef()];
-        }
-        else
-        {
-            StaticCastSharedPtr<SVerticalBox>(Group->Content)->AddSlot()
-                .Expose(Entry->DockVerticalSlot)
-                .FillHeight(1.f)[Entry->DockFrame.Root.ToSharedRef()];
-        }
-        ApplyDockPanelCollapse(*Entry, Entry->bDockCollapsed);
         Entry->DockGroupId = Group->Id;
+        Group->Content->AddPanel(Handle.Id, Entry->DockFrame.Root.ToSharedRef(), Entry->bDockCollapsed);
+        ApplyDockPanelCollapse(*Entry, Entry->bDockCollapsed);
         Group->Children.Add(Handle.Id);
         RetireDockHost(MoveTemp(Entry->Host));
     }
@@ -440,6 +422,7 @@ FWpWindowResult FWpWindowLifetimeService::MoveGroup(const FGuid& SessionId, FGui
 
     TGuardValue<bool> Transfer(bMovingDockPresentation, true);
     TGuardValue<int32> Operation(OperationDepth, OperationDepth + 1);
+    Group.Content->CancelResize();
     if (bFloat)
     {
         const TSharedRef<bool> Closed = MakeShared<bool>(false);
@@ -601,27 +584,9 @@ void FWpWindowLifetimeService::ApplyDockPanelCollapse(
     FWpWindowRuntimeEntry& Entry, bool bCollapsed)
 {
     Entry.DockFrame.SetCollapsed(bCollapsed);
-    if (Entry.DockHorizontalSlot)
+    if (const auto* Group = DockGroups.Find(Entry.DockGroupId))
     {
-        if (bCollapsed)
-        {
-            Entry.DockHorizontalSlot->SetAutoWidth();
-        }
-        else
-        {
-            Entry.DockHorizontalSlot->SetFillWidth(1.f);
-        }
-    }
-    if (Entry.DockVerticalSlot)
-    {
-        if (bCollapsed)
-        {
-            Entry.DockVerticalSlot->SetAutoHeight();
-        }
-        else
-        {
-            Entry.DockVerticalSlot->SetFillHeight(1.f);
-        }
+        (*Group)->Content->SetPanelCollapsed(Entry.Record->WindowId, bCollapsed);
     }
 }
 
@@ -754,6 +719,7 @@ FWpDockFrame FWpWindowLifetimeService::BuildGroupFrame(
                 {
                     TGuardValue<int32> Operation(Service.OperationDepth, Service.OperationDepth + 1);
                     TGuardValue<bool> Transfer(Service.bMovingDockPresentation, true);
+                    Group.Content->CancelResize();
                     Group.Frame.SetCollapsed(!Group.Frame.IsCollapsed());
                 }
             });

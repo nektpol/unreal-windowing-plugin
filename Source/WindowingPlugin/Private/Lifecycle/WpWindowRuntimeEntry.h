@@ -39,6 +39,4 @@ struct FWpWindowRuntimeEntry final
 	FWpDockFrame DockFrame;
 	FWpDockFrame FloatingFrame;
 	TSharedPtr<SBox> FloatingContentSlot;
-	SHorizontalBox::FSlot* DockHorizontalSlot = nullptr;
-	SVerticalBox::FSlot* DockVerticalSlot = nullptr;
 };
