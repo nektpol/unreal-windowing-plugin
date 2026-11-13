@@ -46,4 +46,29 @@ bool FWpWorkspaceGeometryTest::RunTest(const FString&)
 	}
 	return true;
 }
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FWpWorkspaceResizeTest, "WindowingPlugin.M53.EdgeResize",
+    EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FWpWorkspaceResizeTest::RunTest(const FString&)
+{
+    using namespace WpWorkspaceLayout;
+    TestFalse(TEXT("No budget preserves the previous preference"),
+        ResizePreference(0, 100, 70, 6, 32).IsSet());
+    TestEqual(TEXT("A lone edge stops at the center reserve"),
+        ResizePreference(100, 0, 140, 6, 32).Get(0.0), 100.0);
+
+    FInput Input;
+    Input.Viewport = FVector2D(420, 300);
+    Input.Right = 100;
+    Input.Left = ResizePreference(100, Input.Right, 75, 6, 32).Get(0.0);
+    const auto Layout = Resolve(Input);
+    TestTrue(TEXT("Opposite edge retains its reserve"),
+        FMath::IsNearlyEqual(Layout[ERegion::Right].Size.X, 32.0));
+    TestTrue(TEXT("Dragged extent reaches its constrained target"),
+        FMath::IsNearlyEqual(Layout[ERegion::Left].Size.X, 68.0));
+    TestTrue(TEXT("Center keeps its reserve"),
+        FMath::IsNearlyEqual(Layout[ERegion::Center].Size.X, 320.0));
+    return true;
+}
 #endif

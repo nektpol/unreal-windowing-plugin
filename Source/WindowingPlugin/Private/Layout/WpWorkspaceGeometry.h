@@ -52,6 +52,24 @@ namespace WpWorkspaceLayout
         }
     }
 
+    inline TOptional<double> ResizePreference(double Budget, double Opposite, double Requested,
+        double GripWidth, double OppositeReserve)
+    {
+        if (Budget <= 0.0)
+        {
+            return {};
+        }
+
+        const double Reserve = FMath::Min3(Opposite, OppositeReserve, Budget * 0.5);
+        const double MaxExtent = Budget - Reserve;
+        const double Extent = FMath::Clamp(Requested, FMath::Min(GripWidth, MaxExtent), MaxExtent);
+        if (Reserve > 0.0 && Extent + Opposite > Budget)
+        {
+            return Opposite * (Extent / (Budget - Extent));
+        }
+        return Extent;
+    }
+
     inline FLayout Resolve(const FInput& Input)
     {
         const double Width = NonNegative(Input.Viewport.X);

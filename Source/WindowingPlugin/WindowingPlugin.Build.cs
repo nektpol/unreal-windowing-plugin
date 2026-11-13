@@ -14,15 +14,15 @@ public class WindowingPlugin : ModuleRules
 			{
 				"Core", "CoreUObject", "Engine", "UMG",
 			}
-			);
-			
-		
+		);
+
+
 		PrivateDependencyModuleNames.AddRange(
 			new string[]
 			{
-				"Slate", "SlateCore", "ApplicationCore","Json"
+				"Slate", "SlateCore", "ApplicationCore", "InputCore", "Json"
 			}
-			);
+		);
 
 		if (Target.Platform == UnrealTargetPlatform.Win64)
 		{
