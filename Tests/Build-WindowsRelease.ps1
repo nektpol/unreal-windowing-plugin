@@ -24,9 +24,12 @@ if ($version -notmatch '^\d+\.\d+\.\d+$') {
 $inputPlugin = Join-Path $OutputRoot 'Input\WindowingPlugin'
 $package = Join-Path $OutputRoot 'Package\WindowingPlugin'
 New-Item -ItemType Directory -Path $inputPlugin -Force | Out-Null
-foreach ($name in @('WindowingPlugin.uplugin', 'Config', 'Source', 'Resources', 'LICENSE', 'README.md', 'docs')) {
+foreach ($name in @('WindowingPlugin.uplugin', 'Config', 'Source', 'Resources', 'LICENSE', 'README.md')) {
     Copy-Item -LiteralPath (Join-Path $plugin $name) -Destination $inputPlugin -Recurse
 }
+$publicDocs = Join-Path $inputPlugin 'docs'
+New-Item -ItemType Directory -Path $publicDocs | Out-Null
+Copy-Item -LiteralPath (Join-Path $plugin 'docs\Usage.md') -Destination $publicDocs
 
 $log = Join-Path $OutputRoot 'BuildPlugin.log'
 $inputDescriptor = Join-Path $inputPlugin 'WindowingPlugin.uplugin'
@@ -36,7 +39,7 @@ if ($LASTEXITCODE -ne 0) {
     throw "BuildPlugin failed. See $log"
 }
 
-foreach ($name in @('WindowingPlugin.uplugin', 'Binaries\Win64\UnrealEditor-WindowingPlugin.dll', 'Source', 'LICENSE', 'README.md', 'docs')) {
+foreach ($name in @('WindowingPlugin.uplugin', 'Binaries\Win64\UnrealEditor-WindowingPlugin.dll', 'Source', 'LICENSE', 'README.md', 'docs\Usage.md')) {
     if (!(Test-Path -LiteralPath (Join-Path $package $name))) {
         throw "The plugin package is missing $name."
     }
@@ -52,7 +55,7 @@ Copy-Item -LiteralPath (Join-Path $plugin 'LICENSE') -Destination $sample
     'Extract the Win64 plugin ZIP.'
     'Place its WindowingPlugin folder under this sample project''s Plugins directory.'
     'Open WindowingM1.uproject in Unreal Engine 5.8 and build when prompted.'
-    'The sample is a C++ acceptance harness. The plugin README links to the interactive Blueprint sample instructions.'
+    'The sample is a C++ acceptance harness. The plugin README links to the public usage guide.'
 ) | Set-Content -LiteralPath (Join-Path $sample 'README.txt')
 $sampleZip = Join-Path $OutputRoot "WindowingPlugin-$version-Sample.zip"
 Compress-Archive -LiteralPath $sample -DestinationPath $sampleZip

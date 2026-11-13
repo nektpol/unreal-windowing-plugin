@@ -161,3 +161,6 @@ build.log
 build_error.log
 build_output.txt
 rebuild_log.txt
+
+# Local implementation guides
+/docs/internal/

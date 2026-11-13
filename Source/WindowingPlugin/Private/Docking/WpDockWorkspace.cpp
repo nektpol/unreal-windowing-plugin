@@ -7,6 +7,8 @@
 #include "Components/HorizontalBox.h"
 #include "Components/PanelWidget.h"
 #include "Components/NativeWidgetHost.h"
+#include "Components/HorizontalBoxSlot.h"
+#include "Components/VerticalBoxSlot.h"
 
 UNativeWidgetHost* UWpDockWorkspace::AddDockSlot(EWpDockSide Side)
 {
@@ -24,5 +26,14 @@ UNativeWidgetHost* UWpDockWorkspace::AddDockSlot(EWpDockSide Side)
 	}
 
 	UNativeWidgetHost* DockHost = NewObject<UNativeWidgetHost>(this);
-	return Stack->AddChild(DockHost) ? DockHost : nullptr;
+	UPanelSlot* HostSlot = Stack->AddChild(DockHost);
+	if (auto* RowSlot = Cast<UHorizontalBoxSlot>(HostSlot))
+	{
+		RowSlot->SetSize(FSlateChildSize(ESlateSizeRule::Fill));
+	}
+	else if (auto* ColumnSlot = Cast<UVerticalBoxSlot>(HostSlot))
+	{
+		ColumnSlot->SetSize(FSlateChildSize(ESlateSizeRule::Fill));
+	}
+	return HostSlot ? DockHost : nullptr;
 }
