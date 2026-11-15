@@ -10,6 +10,7 @@
 class UNativeWidgetHost;
 class UVerticalBox;
 class UHorizontalBox;
+class UWpDockLayoutPanel;
 /**
  *
  */
@@ -19,6 +20,7 @@ class WINDOWINGPLUGIN_API UWpDockWorkspace : public UUserWidget
 	GENERATED_BODY()
 public:
 	UNativeWidgetHost* AddDockSlot(EWpDockSide Side);
+	bool UsesDockLayoutPanel(const UWpDockLayoutPanel& Layout) const;
 
 protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Windowing", meta=(BindWidget))

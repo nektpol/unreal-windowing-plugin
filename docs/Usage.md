@@ -16,6 +16,8 @@ For drag resizing and bounded viewport sizing, put the four boxes and a widget n
 
 To dock a floating panel, open its Settings menu and choose **Dock Left**, **Dock Right**, **Dock Top**, or **Dock Bottom**. A host can also call **Dock Window** in Blueprint. Dragging the native title bar moves the floating window. The Settings menu on a docked panel offers **Undock Panel**. The group Settings menu can float the whole group, return it to the workspace, or rename it. Use the panel or group header to collapse and expand it where the command is available. Docked panels remain open, and their handles and widget references remain valid during transfers.
 
+With the **Dock Layout Panel** set to **Visible**, drag a floating panel by its plugin title to an exposed viewport edge. Release over the blue preview to create a docker or append the panel to the group on that edge.
+
 Once a docker contains a panel, drag the grey line on the edge facing **Center** to resize the whole region. For a Top docker, drag its bottom edge up or down. Drag the line between expanded panels to resize the panels within their group. Both lines are 2 Slate units wide, with a 6-unit drag target. Scroll along the group's axis when the panels need more space. Use **Expand Right** or **Restore Right Corner** in the docked Top group's Settings to choose which edge owns the top-right corner.
 
 In Blueprint, call **Nest Adjacent Dock Panels** with two neighboring panel handles in the same split to create a child split on the perpendicular axis. The group keeps the existing panel widgets, handles, and order. Floating the group and returning it preserves the nested layout.

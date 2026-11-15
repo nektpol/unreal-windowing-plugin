@@ -42,6 +42,31 @@ namespace WpWorkspaceLayout
     {
         return FMath::IsFinite(Value) ? FMath::Max(0.0, Value) : 0.0;
     }
+    
+    inline TOptional<ERegion> FindDropEdge(FVector2D Local, FVector2D Viewport)
+    {
+        if (Viewport.X <= 0.0 || Viewport.Y <= 0.0 ||
+            !FMath::IsFinite(Local.X) || !FMath::IsFinite(Local.Y) ||
+            Local.X < 0.0 || Local.Y < 0.0 || Local.X >= Viewport.X || Local.Y >= Viewport.Y)
+        {
+            return {};
+        }
+
+        const double Band = FMath::Min3(48.0, Viewport.X * 0.25, Viewport.Y * 0.25);
+        const double Distances[] = {Local.X, Viewport.X - Local.X, Local.Y, Viewport.Y - Local.Y};
+        const ERegion Edges[] = {ERegion::Left, ERegion::Right, ERegion::Top, ERegion::Bottom};
+        TOptional<ERegion> Result;
+        double BestDistance = Band;
+        for (int32 Index = 0; Index < UE_ARRAY_COUNT(Edges); ++Index)
+        {
+            if (Distances[Index] < BestDistance)
+            {
+                Result = Edges[Index];
+                BestDistance = Distances[Index];
+            }
+        }
+        return Result;
+    }
 
     inline void FitOpposingEdges(double Axis, double Minimum, double& First, double& Second)
     {

@@ -500,6 +500,50 @@ FWpDockFrame FWpWindowLifetimeService::BuildPanelFrame(
             ? (*Found)->CreateOptions.Title : FText::GetEmpty();
     });
 
+    TFunction<FReply()> BeginDockDrag;
+    if (bIndividualHost)
+    {
+        const TWeakPtr<SWidget> WeakFloatingSlot = Content;
+        const auto IsCurrentFloatingSource = [SessionId, Handle, WeakFloatingSlot](
+            FWpWindowLifetimeService* Service)
+        {
+            const auto Slot = WeakFloatingSlot.Pin();
+            const auto* Entry = Service ? Service->FindPublished(SessionId, Handle) : nullptr;
+            return Slot && Entry && Entry->Record->State == EWpWindowState::Open &&
+                !Entry->DockGroupId.IsValid() && Entry->Host && Entry->RetainedContent &&
+                Entry->FloatingContentSlot.Get() == Slot.Get() &&
+                !Service->bShuttingDown && !Service->bMovingDockPresentation && !IsEngineExitRequested();
+        };
+
+        const auto CanDock = [GetService, IsCurrentFloatingSource, SessionId](
+            const UWpDockLayoutPanel& Layout)
+        {
+            auto* Service = GetService();
+            if (!IsCurrentFloatingSource(Service))
+            {
+                return false;
+            }
+            const auto* Workspace = Service->FindDockWorkspace(SessionId);
+            return Workspace && Workspace->UsesDockLayoutPanel(Layout);
+        };
+
+        BeginDockDrag = [GetService, IsCurrentFloatingSource, CanDock, SessionId, Handle]
+        {
+            auto* Service = GetService();
+            if (!IsCurrentFloatingSource(Service) || !Service->FindDockWorkspace(SessionId))
+            {
+                return FReply::Unhandled();
+            }
+
+            return FReply::Handled().BeginDragDrop(FWpDockDragOperation::New(CanDock,
+                [GetService, CanDock, SessionId, Handle](const UWpDockLayoutPanel& Layout, EWpDockSide Side)
+                {
+                    auto* Current = GetService();
+                    return Current && CanDock(Layout) && Current->DockWindow(SessionId, Handle, Side).IsSuccess();
+                }));
+        };
+    }
+
     FWpDockFrame Frame = WpBuildDockFrame(Title, Content,
         FSimpleDelegate::CreateLambda([GetService, SessionId, Handle]
         {
@@ -575,7 +619,7 @@ FWpDockFrame FWpWindowLifetimeService::BuildPanelFrame(
                 }
             }
             return Actions;
-        });
+        }, MoveTemp(BeginDockDrag));
     Frame.Toggle->SetEnabled(!bIndividualHost);
     return Frame;
 }

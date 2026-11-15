@@ -16,6 +16,7 @@
 #include "Widgets/Layout/SBox.h"
 #include "Widgets/SBoxPanel.h"
 #include "Widgets/Text/STextBlock.h"
+#include "Docking/WpDockDragOperation.h"
 
 struct FWpDockMenuAction
 {
@@ -84,7 +85,8 @@ inline FSlateFontInfo WpDockSymbolFont()
 inline FWpDockFrame WpBuildDockFrame(
     TAttribute<FText> Title, const TSharedRef<SWidget>& Content,
     FSimpleDelegate Close, FSimpleDelegate Toggle,
-    TFunction<TArray<FWpDockMenuAction>()> GetActions)
+    TFunction<TArray<FWpDockMenuAction>()> GetActions,
+    TFunction<FReply()> BeginDockDrag = {})
 {
     // Native Slate windows can load an existing back buffer. Paint an opaque
     // base before blending the title glyph edges into it.
@@ -101,6 +103,16 @@ inline FWpDockFrame WpBuildDockFrame(
         .ShadowOffset(FVector2D::ZeroVector)
         .ShadowColorAndOpacity(FLinearColor::Transparent);
     TitleText->SetPixelSnapping(EWidgetPixelSnapping::SnapToPixel);
+    TSharedRef<SWidget> HeaderTitle = TitleText;
+    if (BeginDockDrag)
+    {
+        HeaderTitle = SNew(SWpDockDragTitle)
+            .BeginDrag(MoveTemp(BeginDockDrag))
+            [
+                TitleText
+            ];
+    }
+
     FWpDockFrame Frame;
     Frame.Body = SNew(SBox)[Content];
     const TWeakPtr<SBox> WeakBody = Frame.Body;
@@ -113,7 +125,7 @@ inline FWpDockFrame WpBuildDockFrame(
             [
                 SNew(SHorizontalBox)
                 + SHorizontalBox::Slot().FillWidth(1.f).VAlign(VAlign_Center)
-                    .Padding(2.f, 0.f, 0.f, 0.f)[TitleText]
+                    .Padding(2.f, 0.f, 0.f, 0.f)[HeaderTitle]
                 + SHorizontalBox::Slot().AutoWidth().Padding(0.f, 0.f, 2.f, 0.f)
                 [
                     SNew(SComboButton)

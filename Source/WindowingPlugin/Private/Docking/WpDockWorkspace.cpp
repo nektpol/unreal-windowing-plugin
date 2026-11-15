@@ -9,6 +9,7 @@
 #include "Components/NativeWidgetHost.h"
 #include "Components/HorizontalBoxSlot.h"
 #include "Components/VerticalBoxSlot.h"
+#include "WpDockLayoutPanel.h"
 
 UNativeWidgetHost* UWpDockWorkspace::AddDockSlot(EWpDockSide Side)
 {
@@ -36,4 +37,12 @@ UNativeWidgetHost* UWpDockWorkspace::AddDockSlot(EWpDockSide Side)
 		ColumnSlot->SetSize(FSlateChildSize(ESlateSizeRule::Fill));
 	}
 	return HostSlot ? DockHost : nullptr;
+}
+
+bool UWpDockWorkspace::UsesDockLayoutPanel(const UWpDockLayoutPanel& Layout) const
+{
+	return IsValid(LeftDock.Get()) && LeftDock->GetParent() == &Layout &&
+		IsValid(RightDock.Get()) && RightDock->GetParent() == &Layout &&
+		IsValid(TopDock.Get()) && TopDock->GetParent() == &Layout &&
+		IsValid(BottomDock.Get()) && BottomDock->GetParent() == &Layout;
 }

@@ -12,6 +12,9 @@
 #include "Layout/WpWorkspaceGeometry.h"
 #include "Widgets/Layout/SBox.h"
 #include "Widgets/SPanel.h"
+#include "Docking/WpDockDragOperation.h"
+#include "Rendering/DrawElements.h"
+#include "Brushes/SlateColorBrush.h"
 
 #include UE_INLINE_GENERATED_CPP_BY_NAME(WpDockLayoutPanel)
 
@@ -28,18 +31,32 @@ namespace
         if (Name == TEXT("Center")) { return ERegion::Center; }
         return {};
     }
+    
+    EWpDockSide ToDockSide(ERegion Edge)
+    {
+        switch (Edge)
+        {
+        case ERegion::Left:   return EWpDockSide::Left;
+        case ERegion::Right:  return EWpDockSide::Right;
+        case ERegion::Top:    return EWpDockSide::Top;
+        case ERegion::Bottom: return EWpDockSide::Bottom;
+        default:             checkNoEntry(); return EWpDockSide::Left;
+        }
+    }
 }
 
 class SWpDockLayoutPanel final : public SPanel
 {
 public:
     SLATE_BEGIN_ARGS(SWpDockLayoutPanel) {}
+    SLATE_ARGUMENT(TWeakObjectPtr<UWpDockLayoutPanel>, Owner)
     SLATE_END_ARGS()
 
     SWpDockLayoutPanel() : Children(this) {}
 
-    void Construct(const FArguments&)
+    void Construct(const FArguments& Args)
     {
+        Owner = Args._Owner;
         SetCanTick(true);
         BuildGrips();
     }
@@ -47,6 +64,7 @@ public:
     void ResetRegions()
     {
         CancelResize();
+        ClearDockPreview();
         Children.Empty();
         RegionWidgets.Reset();
         Regions.Reset();
@@ -87,6 +105,47 @@ public:
         Preferred.Bottom = RowHeights.Y;
         Invalidate(EInvalidateWidgetReason::Layout);
     }
+    
+    FReply OnDragOver(const FGeometry& Geometry, const FDragDropEvent& Event) override
+    {
+        const auto Operation = Event.GetOperationAs<FWpDockDragOperation>();
+        const auto* Layout = Owner.Get();
+        const auto Edge = GetDropEdge(Geometry, Event);
+        if (!Operation || !Layout || !Edge.IsSet() || !Operation->CanDockIn(*Layout))
+        {
+            ClearDockPreview();
+            return FReply::Unhandled();
+        }
+
+        if (PreviewOperation.Pin() != Operation || PreviewEdge != Edge)
+        {
+            PreviewOperation = Operation;
+            PreviewEdge = Edge;
+            Invalidate(EInvalidateWidgetReason::Paint);
+        }
+        return FReply::Handled();
+    }
+
+    void OnDragLeave(const FDragDropEvent& Event) override
+    {
+        if (PreviewOperation.Pin() == Event.GetOperationAs<FWpDockDragOperation>())
+        {
+            ClearDockPreview();
+        }
+    }
+
+    FReply OnDrop(const FGeometry& Geometry, const FDragDropEvent& Event) override
+    {
+        const auto Operation = Event.GetOperationAs<FWpDockDragOperation>();
+        const auto* Layout = Owner.Get();
+        const auto Edge = GetDropEdge(Geometry, Event);
+        ClearDockPreview();
+        if (!Operation || !Layout || !Edge.IsSet() || !Operation->DockIn(*Layout, ToDockSide(Edge.GetValue())))
+        {
+            return FReply::Unhandled();
+        }
+        return FReply::Handled();
+    }
 
     void OnArrangeChildren(const FGeometry& Geometry, FArrangedChildren& Arranged) const override
     {
@@ -94,8 +153,8 @@ public:
     }
 
     int32 OnPaint(const FPaintArgs& Args, const FGeometry& Geometry, const FSlateRect& CullingRect,
-        FSlateWindowElementList& Elements, int32 Layer, const FWidgetStyle& Style,
-        bool bParentEnabled) const override
+    FSlateWindowElementList& Elements, int32 Layer, const FWidgetStyle& Style,
+    bool bParentEnabled) const override
     {
         FArrangedChildren ArrangedRegions(EVisibility::Visible);
         FArrangedChildren ArrangedGrips(EVisibility::Visible);
@@ -103,11 +162,30 @@ public:
         const int32 RegionLayer = PaintArrangedChildren(
             Args, ArrangedRegions, Geometry, CullingRect, Elements, Layer, Style, bParentEnabled);
 
-        // Grips overlap the dock content and must win paint and hit-test ordering.
-        return ArrangedGrips.Num() > 0
+        const int32 GripLayer = ArrangedGrips.Num() > 0
             ? PaintArrangedChildren(Args, ArrangedGrips, Geometry, CullingRect, Elements,
                 RegionLayer + 1, Style, bParentEnabled)
             : RegionLayer;
+
+        const auto Operation = PreviewOperation.Pin();
+        const auto* Layout = Owner.Get();
+        if (!PreviewEdge.IsSet() || !Operation || !Layout || !Operation->CanDockIn(*Layout))
+        {
+            return GripLayer;
+        }
+
+        const FRegion Preview = GetDropPreview(Geometry.GetLocalSize(), PreviewEdge.GetValue());
+        if (Preview.Size.X <= 0.0 || Preview.Size.Y <= 0.0)
+        {
+            return GripLayer;
+        }
+
+        static const FSlateColorBrush PreviewBrush(FLinearColor(0.12f, 0.48f, 0.95f, 0.40f));
+        const FPaintGeometry PreviewGeometry = Geometry.ToPaintGeometry(
+            FVector2f(Preview.Size), FSlateLayoutTransform(FVector2f(Preview.Position)));
+        FSlateDrawElement::MakeBox(Elements, GripLayer + 1, PreviewGeometry, &PreviewBrush,
+            ESlateDrawEffect::None, PreviewBrush.GetTint(Style) * Style.GetColorAndOpacityTint());
+        return GripLayer + 1;
     }
 
     void ArrangeRegionsAndGrips(const FGeometry& Geometry,
@@ -243,6 +321,11 @@ public:
     }
 
 private:
+    
+    TWeakObjectPtr<UWpDockLayoutPanel> Owner;
+    TWeakPtr<FWpDockDragOperation> PreviewOperation;
+    TOptional<ERegion> PreviewEdge;
+    
     struct FDrag
     {
         ERegion Edge;
@@ -251,6 +334,43 @@ private:
         int32 User;
         uint32 Pointer;
     };
+    
+    FRegion GetDropPreview(FVector2D Viewport, ERegion Edge) const
+    {
+        FInput Input = BuildInput(Viewport);
+        switch (Edge)
+        {
+        case ERegion::Left:   Input.Left = Preferred.Left; break;
+        case ERegion::Right:  Input.Right = Preferred.Right; break;
+        case ERegion::Top:    Input.Top = Preferred.Top; break;
+        case ERegion::Bottom: Input.Bottom = Preferred.Bottom; break;
+        default:              return {};
+        }
+        return Resolve(Input)[Edge];
+    }
+
+    TOptional<ERegion> GetDropEdge(const FGeometry& Geometry, const FDragDropEvent& Event) const
+    {
+        const FVector2D Viewport = Geometry.GetLocalSize();
+        const auto Edge = FindDropEdge(Geometry.AbsoluteToLocal(Event.GetScreenSpacePosition()), Viewport);
+        if (!Edge.IsSet() || !Regions.Contains(Edge.GetValue()))
+        {
+            return {};
+        }
+
+        const FRegion Preview = GetDropPreview(Viewport, Edge.GetValue());
+        return Preview.Size.X > 0.0 && Preview.Size.Y > 0.0 ? Edge : TOptional<ERegion>{};
+    }
+
+    void ClearDockPreview()
+    {
+        if (PreviewEdge.IsSet())
+        {
+            PreviewEdge.Reset();
+            PreviewOperation.Reset();
+            Invalidate(EInvalidateWidgetReason::Paint);
+        }
+    }
 
     static bool IsSide(ERegion Edge)
     {
@@ -402,7 +522,7 @@ void UWpDockLayoutPanel::SetTopOwnsRightCorner(bool bOwnsCorner)
 
 TSharedRef<SWidget> UWpDockLayoutPanel::RebuildWidget()
 {
-    LayoutPanel = SNew(SWpDockLayoutPanel);
+    LayoutPanel = SNew(SWpDockLayoutPanel).Owner(TWeakObjectPtr<UWpDockLayoutPanel>(this));
     LayoutPanel->SetTopOwnsRightCorner(bTopOwnsRightCorner);
     LayoutPanel->SetSizes(CenterMinimum, PreferredSideWidths, PreferredRowHeights);
     RefreshRegions();
