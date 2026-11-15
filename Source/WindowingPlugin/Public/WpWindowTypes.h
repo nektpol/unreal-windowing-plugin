@@ -140,4 +140,7 @@ struct WINDOWINGPLUGIN_API FWpWindowPresentation
 
     UPROPERTY(BlueprintReadOnly, Category="Windowing")
     bool bCollapsed = false;
+
+    UPROPERTY(BlueprintReadOnly, Category="Windowing")
+    bool bHasDockSide = false;
 };

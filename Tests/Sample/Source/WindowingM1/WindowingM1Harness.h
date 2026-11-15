@@ -39,6 +39,7 @@ class UWindowingM1GameInstance final : public UGameInstance
     bool TickTests(float DeltaTime);
     bool TickDockingTest();
     bool TickCollapseTest();
+    bool TickFloatingGroupTest();
     void OpenInitialWindows();
     void CheckInputAndRequestCloses();
     void CheckInitialCloses();

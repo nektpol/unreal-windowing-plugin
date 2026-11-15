@@ -7,6 +7,7 @@
 #include "GameFramework/PlayerController.h"
 #include "GenericPlatform/GenericWindow.h"
 #include "Layout/WidgetPath.h"
+#include "Layout/Children.h"
 #include "Misc/CommandLine.h"
 #include "Misc/FileHelper.h"
 #include "Misc/Parse.h"
@@ -47,6 +48,67 @@ namespace
     {
         const TSharedPtr<FGenericWindow> Native = Window ? Window->GetNativeWindow() : nullptr;
         return Native ? static_cast<HWND>(Native->GetOSWindowHandle()) : nullptr;
+    }
+
+    TSharedPtr<SWidget> FindWidgetByType(const TSharedRef<SWidget>& Root, FName Type)
+    {
+        if (Root->GetType() == Type)
+        {
+            return Root;
+        }
+        if (FChildren* Children = Root->GetChildren())
+        {
+            for (int32 Index = 0; Index < Children->Num(); ++Index)
+            {
+                if (const auto Found = FindWidgetByType(Children->GetChildAt(Index), Type))
+                {
+                    return Found;
+                }
+            }
+        }
+        return nullptr;
+    }
+
+    bool DragPanelLeft(const TSharedRef<SWindow>& Source, const TSharedRef<SWindow>& Target)
+    {
+        const auto Title = FindWidgetByType(Source, TEXT("SWpDockDragTitle"));
+        const auto Body = FindWidgetByType(Target, TEXT("SWpDockPanelDropTarget"));
+        FSlateApplication& Slate = FSlateApplication::Get();
+        FWidgetPath TitlePath;
+        FWidgetPath BodyPath;
+        if (!Title || !Body || !Slate.GeneratePathToWidgetUnchecked(Title.ToSharedRef(), TitlePath) ||
+            !Slate.GeneratePathToWidgetUnchecked(Body.ToSharedRef(), BodyPath))
+        {
+            return false;
+        }
+
+        const FGeometry& TitleGeometry = TitlePath.Widgets.Last().Geometry;
+        const FVector2D Start = TitleGeometry.GetAbsolutePositionAtCoordinates({0.25, 0.5});
+        const FVector2D Move = TitleGeometry.GetAbsolutePositionAtCoordinates({0.5, 0.5});
+        const FVector2D End = BodyPath.Widgets.Last().Geometry.GetAbsolutePositionAtCoordinates({0.12, 0.5});
+        const auto StartHit = Slate.LocateWindowUnderMouse(Start, {Source}, false, 0);
+        const auto MoveHit = Slate.LocateWindowUnderMouse(Move, {Source}, false, 0);
+        const auto EndHit = Slate.LocateWindowUnderMouse(End, {Target}, false, 0);
+        if (!StartHit.ContainsWidget(Title.Get()) || !MoveHit.ContainsWidget(Title.Get()) ||
+            !EndHit.ContainsWidget(Body.Get()))
+        {
+            return false;
+        }
+
+        const TSet<FKey> LeftPressed{EKeys::LeftMouseButton};
+        const FPointerEvent Down(FSlateApplication::CursorPointerIndex, Start, Start,
+            LeftPressed, EKeys::LeftMouseButton, 0.0f, FModifierKeysState());
+        const FPointerEvent DragStart(FSlateApplication::CursorPointerIndex, Move, Start,
+            LeftPressed, EKeys::Invalid, 0.0f, FModifierKeysState());
+        const FPointerEvent DragMove(FSlateApplication::CursorPointerIndex, End, Move,
+            LeftPressed, EKeys::Invalid, 0.0f, FModifierKeysState());
+        const FPointerEvent Up(FSlateApplication::CursorPointerIndex, End, End,
+            {}, EKeys::LeftMouseButton, 0.0f, FModifierKeysState());
+        Slate.RoutePointerDownEvent(StartHit, Down);
+        Slate.RoutePointerMoveEvent(MoveHit, DragStart, false);
+        Slate.RoutePointerMoveEvent(EndHit, DragMove, false);
+        const bool bDragging = Slate.IsDragDropping();
+        return Slate.RoutePointerUpEvent(EndHit, Up).IsEventHandled() && bDragging;
     }
 
     FString ClickWidget(UWindowingM1Widget& Widget, const TSharedRef<SWindow>& Window)
@@ -191,6 +253,7 @@ bool UWindowingM1GameInstance::TickTests(float)
 {
     if (Scenario == TEXT("m51")) { return TickDockingTest(); }
     if (Scenario == TEXT("m52") || Scenario == TEXT("m535")) { return TickCollapseTest(); }
+    if (Scenario == TEXT("m543")) { return TickFloatingGroupTest(); }
     if (Phase == EPhase::Start)
     {
         Deadline = FPlatformTime::Seconds() + 60.0;
@@ -575,6 +638,87 @@ bool UWindowingM1GameInstance::TickDockingTest()
 void UWindowingM1GameInstance::OnPresentationChanged(FWpWindowHandle, FWpWindowPresentation)
 {
     ++PresentationChanges;
+}
+
+bool UWindowingM1GameInstance::TickFloatingGroupTest()
+{
+    auto* Subsystem = GetSubsystem<UWpWindowingSubsystem>();
+    if (Phase == EPhase::Start)
+    {
+        Deadline = FPlatformTime::Seconds() + 20.0;
+        Subsystem->OnWindowOpened.AddDynamic(this, &ThisClass::OnOpened);
+        Subsystem->OnWindowClosed.AddDynamic(this, &ThisClass::OnClosed);
+        Subsystem->OnWindowPresentationChanged.AddDynamic(this, &ThisClass::OnPresentationChanged);
+        A = Open(Subsystem, TEXT("M543 A"));
+        B = Open(Subsystem, TEXT("M543 B"));
+        WidgetB = Cast<UWindowingM1Widget>(Subsystem->GetWidgetFromHandle(B));
+        if (const auto Target = FindWindow(TEXT("M543 B")))
+        {
+            Target->Maximize();
+        }
+        Phase = EPhase::Input;
+    }
+    else if (FPlatformTime::Seconds() > Deadline)
+    {
+        Expect(false, TEXT("Floating group scenario timed out"));
+    }
+    else if (Phase == EPhase::Input)
+    {
+#if PLATFORM_WINDOWS
+        const auto Source = FindWindow(TEXT("M543 A"));
+        const auto Target = FindWindow(TEXT("M543 B"));
+        if (Source && Target && Target->IsWindowMaximized() &&
+            Source->GetTickSpaceGeometry().GetLocalSize().X > 0.0 &&
+            Target->GetTickSpaceGeometry().GetLocalSize().X > 0.0)
+        {
+            UUserWidget* OriginalA = Subsystem->GetWidgetFromHandle(A);
+            if (Expect(DragPanelLeft(Source.ToSharedRef(), Target.ToSharedRef()),
+                TEXT("A left-side drop on a maximized native B creates a group")))
+            {
+                const auto GroupA = Subsystem->GetWindowPresentation(A);
+                const auto GroupB = Subsystem->GetWindowPresentation(B);
+                Expect(GroupA.Mode == EWpWindowPresentationMode::InFloatingGroup &&
+                    GroupB.Mode == EWpWindowPresentationMode::InFloatingGroup &&
+                    GroupA.GroupId.IsValid() && GroupA.GroupId == GroupB.GroupId &&
+                    !GroupA.bHasDockSide && !GroupB.bHasDockSide,
+                    TEXT("Both members share a floating group without an assigned edge"));
+                Expect(IsValid(OriginalA) && WidgetB.IsValid() &&
+                    Subsystem->GetWidgetFromHandle(A) == OriginalA &&
+                    Subsystem->GetWidgetFromHandle(B) == WidgetB.Get(),
+                    TEXT("Grouping retains both widget instances"));
+                Expect(Opened.Num() == 2 && Closed.IsEmpty() && PresentationChanges == 2,
+                    TEXT("Grouping emits a presentation event per child and preserves logical lifetimes"));
+                Phase = EPhase::InputAfterClose;
+            }
+        }
+#else
+        Expect(false, TEXT("The floating group scenario requires the Windows native host"));
+#endif
+    }
+    else if (Phase == EPhase::InputAfterClose)
+    {
+        const auto Group = FindWindow(TEXT("M543 B Group"));
+        if (Group && !FindWindow(TEXT("M543 A")) && !FindWindow(TEXT("M543 B")))
+        {
+            Expect(!Group->IsWindowMaximized(), TEXT("The group opens at normal bounds"));
+            Group->RequestDestroyWindow();
+            Phase = EPhase::InitialCloses;
+        }
+    }
+    else if (Closed.Num() >= 2)
+    {
+        Expect(Closed.Num() == 2 && !Subsystem->GetWidgetFromHandle(A) && !Subsystem->GetWidgetFromHandle(B),
+            TEXT("Closing the native group closes each member once"));
+        Finish();
+        return false;
+    }
+
+    if (!Failures.IsEmpty())
+    {
+        Finish();
+        return false;
+    }
+    return true;
 }
 
 bool UWindowingM1GameInstance::TickCollapseTest()

@@ -11,6 +11,7 @@ struct FWpDockGroup
 	FGuid Id = FGuid::NewGuid();
 	FGuid SessionId;
 	EWpDockSide Side = EWpDockSide::Left;
+	bool bHasDockSide = true;
 	FText Title;
 	TSharedPtr<SWpGroupSplit> Content;
 	TArray<FGuid> Children;

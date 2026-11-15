@@ -70,12 +70,17 @@ private:
 	UWpDockWorkspace* FindDockWorkspace(const FGuid& SessionId) const;
 	FWpDockGroup* FindEdgeGroup(const FGuid& SessionId, EWpDockSide Side) const;
 	FWpDockGroup* FindPanelDropGroup(const FGuid& SessionId, FWpWindowHandle Source, const FWpDockPanelTarget& Target, FVector2D Screen) const;
+	bool IsIndividualDropPanelReady(const FWpWindowRuntimeEntry* Entry, const SWidget* ExpectedSlot = nullptr) const;
+	FWpWindowRuntimeEntry* FindIndividualDropTarget(const FGuid& SessionId, FWpWindowHandle Source, const FWpDockPanelTarget& Target) const;
+	bool CanDropBesidePanel(const FGuid& SessionId, FWpWindowHandle Source, const FWpDockPanelTarget& Target, FVector2D Screen) const;
+	FWpWindowResult GroupFloatingPanels(const FGuid& SessionId, FWpWindowHandle Source, const FWpDockPanelTarget& Target, EWpDockSide Side);
 	FWpWindowResult DockPanelBeside(const FGuid& SessionId, FWpWindowHandle Source, const FWpDockPanelTarget& Target, FVector2D Screen, EWpDockSide Side);
-	void CommitFloatingPanelAttachment(FWpWindowRuntimeEntry& Entry, FWpDockGroup& Group, const TSharedRef<SBox>& Slot, FWpDockFrame&& Frame, bool bCollapsed);
+	void CommitFloatingPanelAttachment(FWpWindowRuntimeEntry& Entry, FWpDockGroup& Group,
+	const TSharedRef<SBox>& Slot, FWpDockFrame&& Frame, bool bCollapsed, TArray<TUniquePtr<FWpNativeWindowHost>>* RetireAfterCommit = nullptr);
 	void CloseGroupChildren(FWpDockGroup& Group, EWpWindowCloseReason Reason);
 	void RemoveGroupMember(FWpWindowRuntimeEntry& Entry);
 	bool CanMoveGroup(const FWpDockGroup& Group) const;
-	FWpWindowResult MoveGroup(const FGuid& SessionId, FGuid GroupId, bool bFloat);
+	FWpWindowResult MoveGroup(const FGuid& SessionId, FGuid GroupId, bool bFloat, TOptional<EWpDockSide> RequestedSide = {});
 	void EmitPresentationChanged(const FGuid& SessionId, FGuid Id);
 
 	TMap<FGuid, TWeakObjectPtr<UWpDockWorkspace>> DockWorkspaces;
