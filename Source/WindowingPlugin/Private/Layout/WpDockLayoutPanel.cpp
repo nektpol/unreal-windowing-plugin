@@ -5,11 +5,10 @@
 #include "Framework/Application/SlateApplication.h"
 #include "Framework/Application/SlateUser.h"
 #include "InputCoreTypes.h"
-#include "Brushes/SlateColorBrush.h"
-#include "Widgets/Layout/SBorder.h"
 #include "Components/PanelSlot.h"
 #include "Layout/ArrangedChildren.h"
 #include "Layout/Children.h"
+#include "Layout/WpResizeGrip.h"
 #include "Layout/WpWorkspaceGeometry.h"
 #include "Widgets/Layout/SBox.h"
 #include "Widgets/SPanel.h"
@@ -91,19 +90,42 @@ public:
 
     void OnArrangeChildren(const FGeometry& Geometry, FArrangedChildren& Arranged) const override
     {
+        ArrangeRegionsAndGrips(Geometry, Arranged, Arranged);
+    }
+
+    int32 OnPaint(const FPaintArgs& Args, const FGeometry& Geometry, const FSlateRect& CullingRect,
+        FSlateWindowElementList& Elements, int32 Layer, const FWidgetStyle& Style,
+        bool bParentEnabled) const override
+    {
+        FArrangedChildren ArrangedRegions(EVisibility::Visible);
+        FArrangedChildren ArrangedGrips(EVisibility::Visible);
+        ArrangeRegionsAndGrips(Geometry, ArrangedRegions, ArrangedGrips);
+        const int32 RegionLayer = PaintArrangedChildren(
+            Args, ArrangedRegions, Geometry, CullingRect, Elements, Layer, Style, bParentEnabled);
+
+        // Grips overlap the dock content and must win paint and hit-test ordering.
+        return ArrangedGrips.Num() > 0
+            ? PaintArrangedChildren(Args, ArrangedGrips, Geometry, CullingRect, Elements,
+                RegionLayer + 1, Style, bParentEnabled)
+            : RegionLayer;
+    }
+
+    void ArrangeRegionsAndGrips(const FGeometry& Geometry,
+        FArrangedChildren& ArrangedRegions, FArrangedChildren& ArrangedGrips) const
+    {
         const FLayout Layout = Resolve(BuildInput(Geometry.GetLocalSize()));
         for (int32 Index = 0; Index < Regions.Num(); ++Index)
         {
             const FRegion& Region = Layout[Regions[Index]];
             if (Region.Size.X > 0 && Region.Size.Y > 0)
             {
-                Arranged.AddWidget(Geometry.MakeChild(RegionWidgets[Index], Region.Size,
+                ArrangedRegions.AddWidget(Geometry.MakeChild(RegionWidgets[Index], Region.Size,
                     FSlateLayoutTransform(FVector2f(Region.Position))));
             }
         }
         for (int32 Index = 0; Index < EdgeCount; ++Index)
         {
-            ArrangeGrip(Geometry, Arranged, Layout, static_cast<ERegion>(Index));
+            ArrangeGrip(Geometry, ArrangedGrips, Layout, static_cast<ERegion>(Index));
         }
     }
 
@@ -129,22 +151,22 @@ public:
     }
 
     static constexpr int32 EdgeCount = static_cast<int32>(ERegion::Center);
-    static constexpr double GripWidth = 6.0;
     static constexpr double OppositeReserve = 32.0;
 
     void BuildGrips()
     {
-        static const FSlateColorBrush GripBrush(FLinearColor(0.24f, 0.24f, 0.24f));
+        constexpr float Inset = WpResizeGrip::LineInset;
+        // Paint against the center-facing boundary within the wider hit target.
+        const FMargin Insets[] = {
+            FMargin(Inset, 0.f, 0.f, 0.f), FMargin(0.f, 0.f, Inset, 0.f),
+            FMargin(0.f, Inset, 0.f, 0.f), FMargin(0.f, 0.f, 0.f, Inset)
+        };
         for (int32 Index = 0; Index < EdgeCount; ++Index)
         {
             const auto Edge = static_cast<ERegion>(Index);
-            const auto Grip = SNew(SBorder)
-                .BorderImage(&GripBrush)
-                .Padding(0.f)
-                .OnMouseButtonDown(FPointerEventHandler::CreateSP(
-                    SharedThis(this), &SWpDockLayoutPanel::BeginResize, Edge));
-            Grip->SetCursor(TOptional<EMouseCursor::Type>(IsSide(Edge)
-                ? EMouseCursor::ResizeLeftRight : EMouseCursor::ResizeUpDown));
+            const auto Grip = WpResizeGrip::Make(IsSide(Edge), Insets[Index]);
+            Grip->SetOnMouseButtonDown(FPointerEventHandler::CreateSP(
+                SharedThis(this), &SWpDockLayoutPanel::BeginResize, Edge));
             Grips.Add(Grip);
         }
     }
@@ -197,7 +219,7 @@ public:
         const double Direction = Edge == ERegion::Left || Edge == ERegion::Top ? 1.0 : -1.0;
         const double Delta = PointerCoordinate(Geometry, Event, Edge) - Drag->StartPointer;
         if (const auto Preference = ResizePreference(
-            Budget, Opposite, Drag->StartExtent + Direction * Delta, GripWidth, OppositeReserve))
+            Budget, Opposite, Drag->StartExtent + Direction * Delta, WpResizeGrip::HitSize, OppositeReserve))
         {
             SetEdgePreference(Edge, Preference.GetValue());
             Invalidate(EInvalidateWidgetReason::Layout);
@@ -314,14 +336,14 @@ private:
         {
             Position.Y = FMath::Max(Region.Position.Y, Center.Position.Y);
             Size.Y = FMath::Min(Region.Position.Y + Region.Size.Y, Center.Position.Y + Center.Size.Y) - Position.Y;
-            Size.X = FMath::Min(GripWidth, Size.X);
+            Size.X = FMath::Min<double>(WpResizeGrip::HitSize, Size.X);
             if (Edge == ERegion::Left) { Position.X += Region.Size.X - Size.X; }
         }
         else
         {
             Position.X = FMath::Max(Region.Position.X, Center.Position.X);
             Size.X = FMath::Min(Region.Position.X + Region.Size.X, Center.Position.X + Center.Size.X) - Position.X;
-            Size.Y = FMath::Min(GripWidth, Size.Y);
+            Size.Y = FMath::Min<double>(WpResizeGrip::HitSize, Size.Y);
             if (Edge == ERegion::Top) { Position.Y += Region.Size.Y - Size.Y; }
         }
         if (Size.X <= 0 || Size.Y <= 0)

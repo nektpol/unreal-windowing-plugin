@@ -52,7 +52,6 @@ private:
 		double TotalWeight;
 	};
 
-	static constexpr double GripSize = 6.0;
 	static constexpr double PanelMinimum = 96.0;
 
 	void RebuildChildren();

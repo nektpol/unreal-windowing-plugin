@@ -112,8 +112,9 @@ inline FWpDockFrame WpBuildDockFrame(
             .Padding(0.f)
             [
                 SNew(SHorizontalBox)
-                + SHorizontalBox::Slot().FillWidth(1.f).VAlign(VAlign_Center)[TitleText]
-                + SHorizontalBox::Slot().AutoWidth()
+                + SHorizontalBox::Slot().FillWidth(1.f).VAlign(VAlign_Center)
+                    .Padding(2.f, 0.f, 0.f, 0.f)[TitleText]
+                + SHorizontalBox::Slot().AutoWidth().Padding(0.f, 0.f, 2.f, 0.f)
                 [
                     SNew(SComboButton)
                     .HasDownArrow(false)
@@ -127,7 +128,7 @@ inline FWpDockFrame WpBuildDockFrame(
                         SNew(STextBlock).Font(SymbolFont).Text(INVTEXT("\u2699"))
                     ]
                 ]
-                + SHorizontalBox::Slot().AutoWidth()
+                + SHorizontalBox::Slot().AutoWidth().Padding(0.f, 0.f, 2.f, 0.f)
                 [
                     SAssignNew(Frame.Toggle, SButton)
                     .ButtonStyle(&SettingsStyle.ButtonStyle)

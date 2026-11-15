@@ -27,6 +27,16 @@ bool FWpGroupSplitTest::RunTest(const FString&)
         if (TestEqual(TEXT("Two panels and a divider"), Expanded.Num(), 3))
         {
             TestEqual(TEXT("Panels share available space"), Axis(Expanded[0].Geometry.GetLocalSize()), 147.0);
+            TestEqual(TEXT("Divider retains its full drag target"),
+                Axis(Expanded[1].Geometry.GetLocalSize()), 6.0);
+            FArrangedChildren Line(EVisibility::All);
+            Expanded[1].Widget->ArrangeChildren(Expanded[1].Geometry, Line);
+            if (TestEqual(TEXT("Divider contains one visual line"), Line.Num(), 1))
+            {
+                TestEqual(TEXT("Grey line is two units wide"), Axis(Line[0].Geometry.GetLocalSize()), 2.0);
+                TestTrue(TEXT("Grey line lets the drag target receive input"),
+                    Line[0].Widget->GetVisibility() == EVisibility::HitTestInvisible);
+            }
         }
 
         Split->SetPanelCollapsed(First, true);

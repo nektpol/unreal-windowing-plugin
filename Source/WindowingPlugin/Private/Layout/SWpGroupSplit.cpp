@@ -2,12 +2,11 @@
 
 #include "Layout/SWpGroupSplit.h"
 
-#include "Brushes/SlateColorBrush.h"
 #include "Framework/Application/SlateApplication.h"
 #include "Framework/Application/SlateUser.h"
 #include "InputCoreTypes.h"
 #include "Layout/ArrangedChildren.h"
-#include "Widgets/Layout/SBorder.h"
+#include "Layout/WpResizeGrip.h"
 #include "Widgets/Layout/SBox.h"
 #include "Widgets/Layout/SScrollBox.h"
 #include "Widgets/SNullWidget.h"
@@ -22,9 +21,11 @@ void SWpGroupSplit::Construct(const FArguments& Args)
 void SWpGroupSplit::AddPanel(FGuid Id, const TSharedRef<SWidget>& Widget, bool bCollapsed)
 {
     CancelResize();
-    static const FSlateColorBrush Brush(FLinearColor(0.24f, 0.24f, 0.24f));
-    const auto Grip = SNew(SBorder).BorderImage(&Brush).Padding(0.f)
-        .OnMouseButtonDown_Lambda([Weak = TWeakPtr<SWpGroupSplit>(SharedThis(this)), Id](
+    const float Inset = WpResizeGrip::LineInset * 0.5f;
+    const auto Grip = WpResizeGrip::Make(bHorizontal,
+        bHorizontal ? FMargin(Inset, 0.f) : FMargin(0.f, Inset));
+    Grip->SetOnMouseButtonDown(FPointerEventHandler::CreateLambda(
+        [Weak = TWeakPtr<SWpGroupSplit>(SharedThis(this)), Id](
             const FGeometry&, const FPointerEvent& Event)
         {
             if (const auto Split = Weak.Pin())
@@ -32,9 +33,7 @@ void SWpGroupSplit::AddPanel(FGuid Id, const TSharedRef<SWidget>& Widget, bool b
                 return Split->BeginResize(Event, Id);
             }
             return FReply::Unhandled();
-        });
-    Grip->SetCursor(TOptional<EMouseCursor::Type>(
-        bHorizontal ? EMouseCursor::ResizeLeftRight : EMouseCursor::ResizeUpDown));
+        }));
     const auto Clip = SNew(SBox).Clipping(EWidgetClipping::ClipToBoundsAlways)[Widget];
     Members.Add({Id, Clip, Grip, 1.0, bCollapsed, nullptr});
     RebuildChildren();
@@ -226,7 +225,7 @@ double SWpGroupSplit::MinimumLength() const
     double Length = 0.0;
     for (int32 Index = 0; Index < Members.Num(); ++Index)
     {
-        Length += Minimum(Members[Index]) + (HasGrip(Index) ? GripSize : 0.0);
+        Length += Minimum(Members[Index]) + (HasGrip(Index) ? WpResizeGrip::HitSize : 0.0);
     }
     return Length;
 }
@@ -287,7 +286,7 @@ void SWpGroupSplit::OnArrangeChildren(const FGeometry& Geometry, FArrangedChildr
         Arrange(Members[Index].Widget, Sizes[Index]);
         if (HasGrip(Index))
         {
-            Arrange(Members[Index].Grip, GripSize);
+            Arrange(Members[Index].Grip, WpResizeGrip::HitSize);
         }
     }
 }
