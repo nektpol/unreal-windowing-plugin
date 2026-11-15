@@ -106,6 +106,14 @@ public:
         Invalidate(EInvalidateWidgetReason::Layout);
     }
     
+    bool IsPointInCenter(FVector2D Screen) const
+    {
+        const FGeometry& Geometry = GetTickSpaceGeometry();
+        const FRegion Center = Resolve(BuildInput(Geometry.GetLocalSize()))[ERegion::Center];
+        const FVector2D Local = Geometry.AbsoluteToLocal(Screen) - Center.Position;
+        return Local.X >= 0.0 && Local.Y >= 0.0 && Local.X < Center.Size.X && Local.Y < Center.Size.Y;
+    }
+
     FReply OnDragOver(const FGeometry& Geometry, const FDragDropEvent& Event) override
     {
         const auto Operation = Event.GetOperationAs<FWpDockDragOperation>();
@@ -509,6 +517,11 @@ void UWpDockLayoutPanel::ReleaseSlateResources(bool bReleaseChildren)
 bool UWpDockLayoutPanel::DoesTopOwnRightCorner() const
 {
     return bTopOwnsRightCorner;
+}
+
+bool UWpDockLayoutPanel::IsPointInCenter(FVector2D Screen) const
+{
+    return LayoutPanel && LayoutPanel->IsPointInCenter(Screen);
 }
 
 void UWpDockLayoutPanel::SetTopOwnsRightCorner(bool bOwnsCorner)

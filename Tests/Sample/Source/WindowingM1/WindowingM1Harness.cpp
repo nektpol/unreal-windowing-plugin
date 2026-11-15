@@ -2,6 +2,8 @@
 #include "Blueprint/WidgetTree.h"
 #include "Components/VerticalBox.h"
 #include "Components/HorizontalBox.h"
+#include "Engine/GameViewportClient.h"
+#include "WpDockLayoutPanel.h"
 
 #include "Framework/Application/SlateApplication.h"
 #include "GameFramework/PlayerController.h"
@@ -109,6 +111,48 @@ namespace
         Slate.RoutePointerMoveEvent(EndHit, DragMove, false);
         const bool bDragging = Slate.IsDragDropping();
         return Slate.RoutePointerUpEvent(EndHit, Up).IsEventHandled() && bDragging;
+    }
+
+    bool DragPanelToWorkspaceCenter(const TSharedRef<SWindow>& Window, bool bCancel)
+    {
+        const auto Title = FindWidgetByType(Window, TEXT("SWpDockDragTitle"));
+        const auto Native = Window->GetNativeWindow();
+        FSlateApplication& Slate = FSlateApplication::Get();
+        FWidgetPath TitlePath;
+        if (!Title || !Native || !Slate.GeneratePathToWidgetUnchecked(Title.ToSharedRef(), TitlePath))
+        {
+            return false;
+        }
+
+        const FGeometry& TitleGeometry = TitlePath.Widgets.Last().Geometry;
+        const FVector2D Start = TitleGeometry.GetAbsolutePositionAtCoordinates({0.25, 0.5});
+        const FVector2D Move = TitleGeometry.GetAbsolutePositionAtCoordinates({0.5, 0.5});
+        const FVector2D Center = Window->GetTickSpaceGeometry().GetAbsolutePositionAtCoordinates({0.5, 0.75});
+        if (!Slate.LocateWindowUnderMouse(Start, {Window}, false, 0).ContainsWidget(Title.Get()))
+        {
+            return false;
+        }
+
+        const TSet<FKey> LeftPressed{EKeys::LeftMouseButton};
+        const FPointerEvent Down(FSlateApplication::CursorPointerIndex, Start, Start,
+            LeftPressed, EKeys::LeftMouseButton, 0.0f, FModifierKeysState());
+        const FPointerEvent DragStart(FSlateApplication::CursorPointerIndex, Move, Start,
+            LeftPressed, EKeys::Invalid, 0.0f, FModifierKeysState());
+        const FPointerEvent DragMove(FSlateApplication::CursorPointerIndex, Center, Move,
+            LeftPressed, EKeys::Invalid, 0.0f, FModifierKeysState());
+        const FPointerEvent Up(FSlateApplication::CursorPointerIndex, Center, Center,
+            {}, EKeys::LeftMouseButton, 0.0f, FModifierKeysState());
+
+        Slate.ProcessMouseButtonDownEvent(Native, Down);
+        Slate.ProcessMouseMoveEvent(DragStart);
+        Slate.ProcessMouseMoveEvent(DragMove);
+        const bool bDragging = Slate.IsDragDropping();
+        if (bCancel)
+        {
+            Slate.CancelDragDrop();
+        }
+        Slate.ProcessMouseButtonUpEvent(Up);
+        return bDragging && !Slate.IsDragDropping();
     }
 
     FString ClickWidget(UWindowingM1Widget& Widget, const TSharedRef<SWindow>& Window)
@@ -254,6 +298,7 @@ bool UWindowingM1GameInstance::TickTests(float)
     if (Scenario == TEXT("m51")) { return TickDockingTest(); }
     if (Scenario == TEXT("m52") || Scenario == TEXT("m535")) { return TickCollapseTest(); }
     if (Scenario == TEXT("m543")) { return TickFloatingGroupTest(); }
+    if (Scenario == TEXT("m544")) { return TickUndockDragTest(); }
     if (Phase == EPhase::Start)
     {
         Deadline = FPlatformTime::Seconds() + 60.0;
@@ -565,6 +610,23 @@ void UWindowingM1GameInstance::Finish()
 
 TSharedRef<SWidget> UWindowingM51Workspace::RebuildWidget()
 {
+    if (bUseDockLayout)
+    {
+        auto* Layout = WidgetTree->ConstructWidget<UWpDockLayoutPanel>();
+        Layout->SetVisibility(ESlateVisibility::Visible);
+        TopDock = WidgetTree->ConstructWidget<UHorizontalBox>(UHorizontalBox::StaticClass(), TEXT("TopDock"));
+        BottomDock = WidgetTree->ConstructWidget<UHorizontalBox>(UHorizontalBox::StaticClass(), TEXT("BottomDock"));
+        LeftDock = WidgetTree->ConstructWidget<UVerticalBox>(UVerticalBox::StaticClass(), TEXT("LeftDock"));
+        RightDock = WidgetTree->ConstructWidget<UVerticalBox>(UVerticalBox::StaticClass(), TEXT("RightDock"));
+        Layout->AddChild(TopDock);
+        Layout->AddChild(BottomDock);
+        Layout->AddChild(LeftDock);
+        Layout->AddChild(RightDock);
+        Layout->AddChild(WidgetTree->ConstructWidget<UVerticalBox>(UVerticalBox::StaticClass(), TEXT("Center")));
+        WidgetTree->RootWidget = Layout;
+        return Super::RebuildWidget();
+    }
+
     UVerticalBox* Root = WidgetTree->ConstructWidget<UVerticalBox>();
     TopDock = WidgetTree->ConstructWidget<UHorizontalBox>();
     BottomDock = WidgetTree->ConstructWidget<UHorizontalBox>();
@@ -709,6 +771,86 @@ bool UWindowingM1GameInstance::TickFloatingGroupTest()
     {
         Expect(Closed.Num() == 2 && !Subsystem->GetWidgetFromHandle(A) && !Subsystem->GetWidgetFromHandle(B),
             TEXT("Closing the native group closes each member once"));
+        Finish();
+        return false;
+    }
+
+    if (!Failures.IsEmpty())
+    {
+        Finish();
+        return false;
+    }
+    return true;
+}
+
+bool UWindowingM1GameInstance::TickUndockDragTest()
+{
+    auto* Subsystem = GetSubsystem<UWpWindowingSubsystem>();
+    if (Phase == EPhase::Start)
+    {
+        Deadline = FPlatformTime::Seconds() + 20.0;
+        auto* Workspace = CreateWidget<UWindowingM51Workspace>(this);
+        Workspace->bUseDockLayout = true;
+        Workspace->AddToViewport();
+        Expect(Subsystem->RegisterDockWorkspace(Workspace).IsSuccess(), TEXT("Register bounded workspace"));
+        Subsystem->OnWindowOpened.AddDynamic(this, &ThisClass::OnOpened);
+        Subsystem->OnWindowClosed.AddDynamic(this, &ThisClass::OnClosed);
+        Subsystem->OnWindowPresentationChanged.AddDynamic(this, &ThisClass::OnPresentationChanged);
+        A = Open(Subsystem, TEXT("M544 A"));
+        PreviousWidget = Cast<UWindowingM1Widget>(Subsystem->GetWidgetFromHandle(A));
+        if (auto* Panel = PreviousWidget.Get())
+        {
+            Panel->Clicks = 544;
+        }
+        Expect(Subsystem->DockWindow(A, EWpDockSide::Top).IsSuccess(), TEXT("Dock A before dragging it"));
+        Phase = EPhase::Input;
+    }
+    else if (FPlatformTime::Seconds() > Deadline)
+    {
+        Expect(false, TEXT("Drag-to-undock scenario timed out"));
+    }
+    else if (Phase == EPhase::Input || Phase == EPhase::InputAfterClose)
+    {
+#if PLATFORM_WINDOWS
+        const auto* Viewport = GetGameViewportClient();
+        const auto Window = Viewport ? Viewport->GetWindow() : nullptr;
+        if (Window && !FindWindow(TEXT("M544 A")))
+        {
+            // The real Win32 hit test must see the sample, even when the runner lacks foreground permission.
+            Expect(::SetWindowPos(NativeHandle(Window), HWND_TOPMOST, 0, 0, 0, 0,
+                SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE) != 0, TEXT("Expose the sample workspace for the drop"));
+            const bool bCancel = Phase == EPhase::Input;
+            const int32 Before = PresentationChanges;
+            Expect(DragPanelToWorkspaceCenter(Window.ToSharedRef(), bCancel),
+                TEXT("The managed title starts and finishes the undock gesture"));
+            const auto Presentation = Subsystem->GetWindowPresentation(A);
+            Expect(bCancel ? Presentation.Mode == EWpWindowPresentationMode::Docked
+                    && Presentation.GroupId.IsValid() && PresentationChanges == Before
+                : Presentation.Mode == EWpWindowPresentationMode::Floating
+                    && !Presentation.GroupId.IsValid() && PresentationChanges == Before + 1,
+                TEXT("Cancellation keeps A docked and a center release floats it once"));
+            Expect(PreviousWidget.IsValid() && Subsystem->GetWidgetFromHandle(A) == PreviousWidget.Get() &&
+                PreviousWidget->Clicks == 544 && Opened.Num() == 1 && Closed.IsEmpty(),
+                TEXT("The gesture preserves A's live widget and logical lifetime"));
+            if (bCancel)
+            {
+                Phase = EPhase::InputAfterClose;
+            }
+            else
+            {
+                Expect(FindWindow(TEXT("M544 A")).IsValid(), TEXT("A gets an individual native window"));
+                Close(A);
+                Phase = EPhase::InitialCloses;
+            }
+        }
+#else
+        Expect(false, TEXT("The drag-to-undock scenario requires the Windows native host"));
+#endif
+    }
+    else if (!Closed.IsEmpty())
+    {
+        Expect(Closed.Num() == 1 && !Subsystem->GetWidgetFromHandle(A),
+            TEXT("The undocked panel closes once"));
         Finish();
         return false;
     }

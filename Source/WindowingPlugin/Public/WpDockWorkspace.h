@@ -21,6 +21,7 @@ class WINDOWINGPLUGIN_API UWpDockWorkspace : public UUserWidget
 public:
 	UNativeWidgetHost* AddDockSlot(EWpDockSide Side);
 	bool UsesDockLayoutPanel(const UWpDockLayoutPanel& Layout) const;
+	const UWpDockLayoutPanel* FindDockLayoutPanel() const;
 
 protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Windowing", meta=(BindWidget))

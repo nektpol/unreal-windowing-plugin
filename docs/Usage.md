@@ -22,6 +22,8 @@ To place the panel beside a specific grouped panel, drag over the left, right, t
 
 To create a floating group, drop one individually floating panel onto the highlighted side of another floating panel. The group opens at the target's normal window bounds and keeps both live widgets. Use the group gear to choose its first available dock edge. **Has Dock Side** in the presentation snapshot tells Blueprint when **Side** is set.
 
+To undock a grouped panel, drag its managed title into the registered workspace center or onto exposed Windows desktop. Release when the card says **Float** to open its own window near the pointer. Press Escape to keep it in the group. **Undock Panel** in the gear menu remains available.
+
 Once a docker contains a panel, drag the grey line on the edge facing **Center** to resize the whole region. For a Top docker, drag its bottom edge up or down. Drag the line between expanded panels to resize the panels within their group. Both lines are 2 Slate units wide, with a 6-unit drag target. Scroll along the group's axis when the panels need more space. Use **Expand Right** or **Restore Right Corner** in the docked Top group's Settings to choose which edge owns the top-right corner.
 
 In Blueprint, call **Nest Adjacent Dock Panels** with two neighboring panel handles in the same split to create a child split on the perpendicular axis. The group keeps the existing panel widgets, handles, and order. Floating the group and returning it preserves the nested layout.

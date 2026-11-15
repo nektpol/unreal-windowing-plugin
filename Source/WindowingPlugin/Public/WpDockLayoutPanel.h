@@ -17,6 +17,7 @@ public:
 	void ReleaseSlateResources(bool bReleaseChildren) override;
 
 	bool DoesTopOwnRightCorner() const;
+	bool IsPointInCenter(FVector2D Screen) const;
 	void SetTopOwnsRightCorner(bool bOwnsCorner);
 
 	UPROPERTY(EditAnywhere, Category="Dock Layout")

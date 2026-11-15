@@ -40,6 +40,7 @@ class UWindowingM1GameInstance final : public UGameInstance
     bool TickDockingTest();
     bool TickCollapseTest();
     bool TickFloatingGroupTest();
+    bool TickUndockDragTest();
     void OpenInitialWindows();
     void CheckInputAndRequestCloses();
     void CheckInitialCloses();
@@ -94,6 +95,9 @@ UCLASS()
 class UWindowingM51Workspace final : public UWpDockWorkspace
 {
     GENERATED_BODY()
+public:
+    bool bUseDockLayout = false;
+
 protected:
     TSharedRef<SWidget> RebuildWidget() override;
 };

@@ -38,7 +38,7 @@ public:
 	FWpWindowResult RegisterDockWorkspace(const FGuid& SessionId, UWpDockWorkspace* Workspace);
 	FWpWindowResult UnregisterDockWorkspace(const FGuid& SessionId, UWpDockWorkspace* Workspace);
 	FWpWindowResult DockWindow(const FGuid& SessionId, FWpWindowHandle Handle, EWpDockSide Side);
-	FWpWindowResult UndockWindow(const FGuid& SessionId, FWpWindowHandle Handle);
+	FWpWindowResult UndockWindow(const FGuid& SessionId, FWpWindowHandle Handle, TOptional<FWpPlacementSnapshot> DropPlacement = {});
 	FWpWindowResult UndockGroup(const FGuid& SessionId, FGuid GroupId);
 	FWpWindowResult DockGroup(const FGuid& SessionId, FGuid GroupId);
 	FWpWindowPresentation GetWindowPresentation(const FGuid& SessionId, FWpWindowHandle Handle) const;
@@ -70,6 +70,8 @@ private:
 	UWpDockWorkspace* FindDockWorkspace(const FGuid& SessionId) const;
 	FWpDockGroup* FindEdgeGroup(const FGuid& SessionId, EWpDockSide Side) const;
 	FWpDockGroup* FindPanelDropGroup(const FGuid& SessionId, FWpWindowHandle Source, const FWpDockPanelTarget& Target, FVector2D Screen) const;
+	bool IsUndockDragCurrent(const FGuid& SessionId, FWpWindowHandle Handle, FGuid GroupId, const SWidget* OriginalSlot, void* CaptureWindow) const;
+	TOptional<FWpPlacementSnapshot> ResolveUndockDrop(const FWpWindowRuntimeEntry& Entry, FVector2D Screen) const;
 	bool IsIndividualDropPanelReady(const FWpWindowRuntimeEntry* Entry, const SWidget* ExpectedSlot = nullptr) const;
 	FWpWindowRuntimeEntry* FindIndividualDropTarget(const FGuid& SessionId, FWpWindowHandle Source, const FWpDockPanelTarget& Target) const;
 	bool CanDropBesidePanel(const FGuid& SessionId, FWpWindowHandle Source, const FWpDockPanelTarget& Target, FVector2D Screen) const;

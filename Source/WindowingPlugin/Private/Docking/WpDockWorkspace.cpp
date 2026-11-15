@@ -46,3 +46,9 @@ bool UWpDockWorkspace::UsesDockLayoutPanel(const UWpDockLayoutPanel& Layout) con
 		IsValid(TopDock.Get()) && TopDock->GetParent() == &Layout &&
 		IsValid(BottomDock.Get()) && BottomDock->GetParent() == &Layout;
 }
+
+const UWpDockLayoutPanel* UWpDockWorkspace::FindDockLayoutPanel() const
+{
+	const auto* Layout = LeftDock ? Cast<UWpDockLayoutPanel>(LeftDock->GetParent()) : nullptr;
+	return Layout && UsesDockLayoutPanel(*Layout) ? Layout : nullptr;
+}
