@@ -18,9 +18,9 @@ void SWpGroupSplit::Construct(const FArguments& Args)
     bHorizontal = Args._Horizontal;
 }
 
-void SWpGroupSplit::AddPanel(FGuid Id, const TSharedRef<SWidget>& Widget, bool bCollapsed)
+SWpGroupSplit::FMember SWpGroupSplit::MakeMember(
+    FGuid Id, const TSharedRef<SWidget>& Widget, bool bCollapsed)
 {
-    CancelResize();
     const float Inset = WpResizeGrip::LineInset * 0.5f;
     const auto Grip = WpResizeGrip::Make(bHorizontal,
         bHorizontal ? FMargin(Inset, 0.f) : FMargin(0.f, Inset));
@@ -35,13 +35,105 @@ void SWpGroupSplit::AddPanel(FGuid Id, const TSharedRef<SWidget>& Widget, bool b
             return FReply::Unhandled();
         }));
     const auto Clip = SNew(SBox).Clipping(EWidgetClipping::ClipToBoundsAlways)[Widget];
-    Members.Add({Id, Clip, Grip, 1.0, bCollapsed, nullptr});
+    return {Id, Clip, Grip, 1.0, bCollapsed, nullptr};
+}
+
+void SWpGroupSplit::AddPanel(FGuid Id, const TSharedRef<SWidget>& Widget, bool bCollapsed)
+{
+    CancelResize();
+    Members.Add(MakeMember(Id, Widget, bCollapsed));
     RebuildChildren();
 }
 
 int32 SWpGroupSplit::FindMember(FGuid Id) const
 {
     return Members.IndexOfByPredicate([Id](const FMember& Member) { return Member.Id == Id; });
+}
+
+bool SWpGroupSplit::ContainsPanel(FGuid Id) const
+{
+    const int32 Index = FindMember(Id);
+    if (Index != INDEX_NONE && !Members[Index].Branch)
+    {
+        return true;
+    }
+    return Members.ContainsByPredicate([Id](const FMember& Member)
+    {
+        return Member.Branch && Member.Branch->ContainsPanel(Id);
+    });
+}
+
+bool SWpGroupSplit::InsertPanelBeside(FGuid TargetId, FGuid NewId, const TSharedRef<SWidget>& NewWidget,
+    bool bNewCollapsed, bool bHorizontalDrop, bool bInsertBefore)
+{
+    if (!TargetId.IsValid() || !NewId.IsValid() || TargetId == NewId || ContainsPanel(NewId))
+    {
+        return false;
+    }
+
+    const int32 Index = FindMember(TargetId);
+    if (Index == INDEX_NONE)
+    {
+        for (const FMember& Member : Members)
+        {
+            if (Member.Branch && Member.Branch->InsertPanelBeside(
+                TargetId, NewId, NewWidget, bNewCollapsed, bHorizontalDrop, bInsertBefore))
+            {
+                CancelResize();
+                return true;
+            }
+        }
+        return false;
+    }
+
+    FMember& Target = Members[Index];
+    if (Target.Branch || Target.bCollapsed)
+    {
+        return false;
+    }
+
+    CancelResize();
+    if (bHorizontal == bHorizontalDrop)
+    {
+        FMember Incoming = MakeMember(NewId, NewWidget, bNewCollapsed);
+        Incoming.Weight = Target.Weight * 0.5;
+        if (!bNewCollapsed)
+        {
+            Target.Weight -= Incoming.Weight;
+        }
+        Members.Insert(MoveTemp(Incoming), bInsertBefore ? Index : Index + 1);
+        RebuildChildren();
+        return true;
+    }
+
+    const double OuterWeight = Target.Weight;
+    const auto TargetContent = Target.Widget->GetChildren()->GetChildAt(0);
+    Target.Widget->SetContent(SNullWidget::NullWidget);
+    const auto Nested = SNew(SWpGroupSplit).Horizontal(bHorizontalDrop);
+    if (bInsertBefore)
+    {
+        Nested->AddPanel(NewId, NewWidget, bNewCollapsed);
+        Nested->AddPanel(TargetId, TargetContent, false);
+    }
+    else
+    {
+        Nested->AddPanel(TargetId, TargetContent, false);
+        Nested->AddPanel(NewId, NewWidget, bNewCollapsed);
+    }
+    const auto Scroll = SNew(SScrollBox)
+        .Orientation(bHorizontalDrop ? Orient_Horizontal : Orient_Vertical)
+        .ConsumeMouseWheel(EConsumeMouseWheel::WhenScrollingPossible)
+        + SScrollBox::Slot().FillContentSize(1.f)
+        [
+            Nested
+        ];
+
+    FMember Branch = MakeMember(FGuid::NewGuid(), Scroll, false);
+    Branch.Branch = Nested;
+    Branch.Weight = OuterWeight;
+    Target = MoveTemp(Branch);
+    RebuildChildren();
+    return true;
 }
 
 bool SWpGroupSplit::NestAdjacent(FGuid First, FGuid Second)

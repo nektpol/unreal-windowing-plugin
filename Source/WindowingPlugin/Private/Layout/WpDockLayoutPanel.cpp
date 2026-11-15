@@ -117,10 +117,11 @@ public:
             return FReply::Unhandled();
         }
 
-        if (PreviewOperation.Pin() != Operation || PreviewEdge != Edge)
+        if (PreviewOperation.Pin() != Operation || PreviewEdge != Edge || !Operation->OwnsPreview(*this))
         {
             PreviewOperation = Operation;
             PreviewEdge = Edge;
+            Operation->SetPreviewOwner(SharedThis(this));
             Invalidate(EInvalidateWidgetReason::Paint);
         }
         return FReply::Handled();
@@ -153,8 +154,8 @@ public:
     }
 
     int32 OnPaint(const FPaintArgs& Args, const FGeometry& Geometry, const FSlateRect& CullingRect,
-    FSlateWindowElementList& Elements, int32 Layer, const FWidgetStyle& Style,
-    bool bParentEnabled) const override
+        FSlateWindowElementList& Elements, int32 Layer, const FWidgetStyle& Style,
+        bool bParentEnabled) const override
     {
         FArrangedChildren ArrangedRegions(EVisibility::Visible);
         FArrangedChildren ArrangedGrips(EVisibility::Visible);
@@ -169,7 +170,7 @@ public:
 
         const auto Operation = PreviewOperation.Pin();
         const auto* Layout = Owner.Get();
-        if (!PreviewEdge.IsSet() || !Operation || !Layout || !Operation->CanDockIn(*Layout))
+        if (!PreviewEdge.IsSet() || !Operation || !Operation->OwnsPreview(*this) || !Layout || !Operation->CanDockIn(*Layout))
         {
             return GripLayer;
         }
@@ -180,12 +181,7 @@ public:
             return GripLayer;
         }
 
-        static const FSlateColorBrush PreviewBrush(FLinearColor(0.12f, 0.48f, 0.95f, 0.40f));
-        const FPaintGeometry PreviewGeometry = Geometry.ToPaintGeometry(
-            FVector2f(Preview.Size), FSlateLayoutTransform(FVector2f(Preview.Position)));
-        FSlateDrawElement::MakeBox(Elements, GripLayer + 1, PreviewGeometry, &PreviewBrush,
-            ESlateDrawEffect::None, PreviewBrush.GetTint(Style) * Style.GetColorAndOpacityTint());
-        return GripLayer + 1;
+        return WpPaintDockDropPreview(Geometry, Elements, GripLayer + 1, Style, Preview.Position, Preview.Size);
     }
 
     void ArrangeRegionsAndGrips(const FGeometry& Geometry,
@@ -364,6 +360,10 @@ private:
 
     void ClearDockPreview()
     {
+        if (const auto Operation = PreviewOperation.Pin())
+        {
+            Operation->ReleasePreviewOwner(*this);
+        }
         if (PreviewEdge.IsSet())
         {
             PreviewEdge.Reset();

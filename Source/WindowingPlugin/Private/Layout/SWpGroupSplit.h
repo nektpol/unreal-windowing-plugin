@@ -18,6 +18,8 @@ SLATE_END_ARGS()
 SWpGroupSplit();
 	void Construct(const FArguments& Args);
 	void AddPanel(FGuid Id, const TSharedRef<SWidget>& Widget, bool bCollapsed);
+	bool ContainsPanel(FGuid Id) const;
+	bool InsertPanelBeside(FGuid TargetId, FGuid NewId, const TSharedRef<SWidget>& NewWidget, bool bNewCollapsed, bool bHorizontalDrop, bool bInsertBefore);
 	void RemovePanel(FGuid Id);
 	void SetPanelCollapsed(FGuid Id, bool bCollapsed);
 	bool NestAdjacent(FGuid First, FGuid Second);
@@ -40,6 +42,8 @@ private:
 		bool bCollapsed = false;
 		TSharedPtr<SWpGroupSplit> Branch;
 	};
+
+	FMember MakeMember(FGuid Id, const TSharedRef<SWidget>& Widget, bool bCollapsed);
 
 	struct FDrag
 	{

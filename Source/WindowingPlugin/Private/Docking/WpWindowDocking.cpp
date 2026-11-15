@@ -12,6 +12,8 @@
 #include "Widgets/SNullWidget.h"
 #include "Widgets/Input/SEditableTextBox.h"
 #include "WpDockLayoutPanel.h"
+#include "Docking/WpDockPanelDropTarget.h"
+#include "Layout/WpWorkspaceGeometry.h"
 #include "Widgets/Layout/SScrollBox.h"
 
 namespace
@@ -99,6 +101,115 @@ FWpDockGroup* FWpWindowLifetimeService::FindEdgeGroup(const FGuid& SessionId, EW
         }
     }
     return nullptr;
+}
+
+FWpDockGroup* FWpWindowLifetimeService::FindPanelDropGroup(
+    const FGuid& SessionId, FWpWindowHandle Source, const FWpDockPanelTarget& Target, FVector2D Screen) const
+{
+    if (bMovingDockPresentation || bShuttingDown || IsEngineExitRequested() ||
+        SessionId != Target.SessionId || Source.Id == Target.Handle.Id)
+    {
+        return nullptr;
+    }
+
+    const auto* SourceEntry = FindPublished(SessionId, Source);
+    const auto* TargetEntry = FindPublished(SessionId, Target.Handle);
+    const auto TargetSlot = Target.ContentSlot.Pin();
+    if (!SourceEntry || SourceEntry->Record->State != EWpWindowState::Open ||
+        SourceEntry->DockGroupId.IsValid() || !SourceEntry->Host ||
+        !SourceEntry->RetainedContent || !SourceEntry->FloatingContentSlot ||
+        !TargetEntry || TargetEntry->Record->State != EWpWindowState::Open ||
+        !TargetSlot || TargetEntry->DockContentSlot.Get() != TargetSlot.Get() ||
+        !TargetEntry->DockFrame.Body || TargetEntry->DockFrame.IsCollapsed())
+    {
+        return nullptr;
+    }
+
+    const auto* Found = DockGroups.Find(TargetEntry->DockGroupId);
+    FWpDockGroup* Group = Found ? Found->Get() : nullptr;
+    if (!Group || Group->SessionId != SessionId || !CanMoveGroup(*Group) ||
+        !Group->Content || !Group->Content->ContainsPanel(Target.Handle.Id) ||
+        !Group->Frame.Body || Group->Frame.IsCollapsed())
+    {
+        return nullptr;
+    }
+
+    if (!Group->Host)
+    {
+        const UWpDockWorkspace* Workspace = FindDockWorkspace(SessionId);
+        const auto* Slot = Group->Slot.Get();
+        const UPanelWidget* Edge = Slot ? Slot->GetParent() : nullptr;
+        const auto* Layout = Edge ? Cast<UWpDockLayoutPanel>(Edge->GetParent()) : nullptr;
+        if (!Workspace || !Layout || !Workspace->UsesDockLayoutPanel(*Layout))
+        {
+            return nullptr;
+        }
+
+        const FGeometry& Geometry = Layout->GetCachedGeometry();
+        if (WpWorkspaceLayout::FindDropEdge(
+            Geometry.AbsoluteToLocal(Screen), Geometry.GetLocalSize()).IsSet())
+        {
+            return nullptr;
+        }
+    }
+    return Group;
+}
+
+FWpWindowResult FWpWindowLifetimeService::DockPanelBeside(
+    const FGuid& SessionId, FWpWindowHandle Source, const FWpDockPanelTarget& Target,
+    FVector2D Screen, EWpDockSide Side)
+{
+    auto* Group = FindPanelDropGroup(SessionId, Source, Target, Screen);
+    auto* Entry = FindPublished(SessionId, Source);
+    if (!Group || !Entry)
+    {
+        return DockResult(EWpWindowResultCode::InvalidState);
+    }
+
+    const bool bHorizontalDrop = Side == EWpDockSide::Left || Side == EWpDockSide::Right;
+    const bool bInsertBefore = Side == EWpDockSide::Left || Side == EWpDockSide::Top;
+    {
+        TGuardValue<bool> Transfer(bMovingDockPresentation, true);
+        TGuardValue<int32> Operation(OperationDepth, OperationDepth + 1);
+        const bool bCollapsed = !Group->Host && Entry->bDockCollapsed;
+        const auto Slot = SNew(SBox);
+        FWpDockFrame Frame = BuildPanelFrame(SessionId, Source, Slot, false);
+        if (!Group->Content->InsertPanelBeside(Target.Handle.Id, Source.Id, Frame.Root.ToSharedRef(),
+            bCollapsed, bHorizontalDrop, bInsertBefore))
+        {
+            return DockResult(EWpWindowResultCode::DockAttachmentFailed);
+        }
+
+        CommitFloatingPanelAttachment(*Entry, *Group, Slot, MoveTemp(Frame), bCollapsed);
+    }
+    EmitPresentationChanged(SessionId, Source.Id);
+    return DockResult(EWpWindowResultCode::Success);
+}
+
+void FWpWindowLifetimeService::CommitFloatingPanelAttachment(
+    FWpWindowRuntimeEntry& Entry, FWpDockGroup& Group, const TSharedRef<SBox>& Slot,
+    FWpDockFrame&& Frame, bool bCollapsed)
+{
+    if (Entry.PlacementId.IsSet())
+    {
+        CapturePlacement(Entry);
+    }
+    else
+    {
+        Entry.bHasPlacement |= WpPlacement::Capture(Entry.Host->GetNativeHandle(), Entry.Placement);
+    }
+    Entry.FloatingContentSlot->SetContent(SNullWidget::NullWidget);
+    Entry.Host->SetContent(SNullWidget::NullWidget);
+    Entry.FloatingFrame = {};
+    Entry.FloatingContentSlot.Reset();
+
+    Entry.DockContentSlot = Slot;
+    Entry.DockFrame = MoveTemp(Frame);
+    Entry.DockGroupId = Group.Id;
+    Group.Children.Add(Entry.Record->WindowId);
+    Slot->SetContent(Entry.RetainedContent.ToSharedRef());
+    ApplyDockPanelCollapse(Entry, bCollapsed);
+    RetireDockHost(MoveTemp(Entry.Host));
 }
 
 FWpWindowPresentation FWpWindowLifetimeService::GetWindowPresentation(
@@ -264,7 +375,7 @@ FWpWindowResult FWpWindowLifetimeService::DockWindow(
     {
         return DockResult(EWpWindowResultCode::DockWorkspaceUnavailable);
     }
-    if (!Entry->Host || !Entry->RetainedContent)
+    if (!Entry->Host || !Entry->RetainedContent || !Entry->FloatingContentSlot)
     {
         return DockResult(EWpWindowResultCode::InvalidState);
     }
@@ -308,27 +419,10 @@ FWpWindowResult FWpWindowLifetimeService::DockWindow(
             return DockResult(EWpWindowResultCode::DockAttachmentFailed);
         }
 
-        if (Entry->PlacementId.IsSet())
-        {
-            CapturePlacement(*Entry);
-        }
-        else
-        {
-            Entry->bHasPlacement |= WpPlacement::Capture(Entry->Host->GetNativeHandle(), Entry->Placement);
-        }
-        Entry->FloatingContentSlot->SetContent(SNullWidget::NullWidget);
-        Entry->Host->SetContent(SNullWidget::NullWidget);
-        Entry->FloatingFrame = {};
-        Entry->FloatingContentSlot.Reset();
-
-        const TSharedRef<SBox> Slot = SNew(SBox)[Entry->RetainedContent.ToSharedRef()];
-        Entry->DockContentSlot = Slot;
-        Entry->DockFrame = BuildPanelFrame(SessionId, Handle, Slot, false);
-        Entry->DockGroupId = Group->Id;
-        Group->Content->AddPanel(Handle.Id, Entry->DockFrame.Root.ToSharedRef(), Entry->bDockCollapsed);
-        ApplyDockPanelCollapse(*Entry, Entry->bDockCollapsed);
-        Group->Children.Add(Handle.Id);
-        RetireDockHost(MoveTemp(Entry->Host));
+        const auto Slot = SNew(SBox);
+        FWpDockFrame Frame = BuildPanelFrame(SessionId, Handle, Slot, false);
+        Group->Content->AddPanel(Handle.Id, Frame.Root.ToSharedRef(), Entry->bDockCollapsed);
+        CommitFloatingPanelAttachment(*Entry, *Group, Slot, MoveTemp(Frame), Entry->bDockCollapsed);
     }
     EmitPresentationChanged(SessionId, Handle.Id);
     return DockResult(EWpWindowResultCode::Success);
@@ -500,6 +594,17 @@ FWpDockFrame FWpWindowLifetimeService::BuildPanelFrame(
             ? (*Found)->CreateOptions.Title : FText::GetEmpty();
     });
 
+    TSharedRef<SWidget> FrameContent = Content;
+    if (!bIndividualHost)
+    {
+        const FWpDockPanelTarget DropTarget{SessionId, Handle, TWeakPtr<SWidget>(Content)};
+        FrameContent = SNew(SWpDockPanelDropTarget)
+            .Target(DropTarget)
+            [
+                Content
+            ];
+    }
+
     TFunction<FReply()> BeginDockDrag;
     if (bIndividualHost)
     {
@@ -527,24 +632,38 @@ FWpDockFrame FWpWindowLifetimeService::BuildPanelFrame(
             return Workspace && Workspace->UsesDockLayoutPanel(Layout);
         };
 
-        BeginDockDrag = [GetService, IsCurrentFloatingSource, CanDock, SessionId, Handle]
+        BeginDockDrag = [GetService, IsCurrentFloatingSource, CanDock, SessionId, Handle, Title]
         {
             auto* Service = GetService();
-            if (!IsCurrentFloatingSource(Service) || !Service->FindDockWorkspace(SessionId))
+            if (!IsCurrentFloatingSource(Service))
             {
                 return FReply::Unhandled();
             }
 
-            return FReply::Handled().BeginDragDrop(FWpDockDragOperation::New(CanDock,
+            return FReply::Handled().BeginDragDrop(FWpDockDragOperation::New(Title.Get(), CanDock,
                 [GetService, CanDock, SessionId, Handle](const UWpDockLayoutPanel& Layout, EWpDockSide Side)
                 {
                     auto* Current = GetService();
                     return Current && CanDock(Layout) && Current->DockWindow(SessionId, Handle, Side).IsSuccess();
+                },
+                [GetService, IsCurrentFloatingSource, SessionId, Handle](
+                    const FWpDockPanelTarget& Target, FVector2D Screen)
+                {
+                    auto* Current = GetService();
+                    return IsCurrentFloatingSource(Current) &&
+                        Current->FindPanelDropGroup(SessionId, Handle, Target, Screen) != nullptr;
+                },
+                [GetService, IsCurrentFloatingSource, SessionId, Handle](
+                    const FWpDockPanelTarget& Target, FVector2D Screen, EWpDockSide Side)
+                {
+                    auto* Current = GetService();
+                    return IsCurrentFloatingSource(Current) &&
+                        Current->DockPanelBeside(SessionId, Handle, Target, Screen, Side).IsSuccess();
                 }));
         };
     }
 
-    FWpDockFrame Frame = WpBuildDockFrame(Title, Content,
+    FWpDockFrame Frame = WpBuildDockFrame(Title, FrameContent,
         FSimpleDelegate::CreateLambda([GetService, SessionId, Handle]
         {
             if (auto* Service = GetService())

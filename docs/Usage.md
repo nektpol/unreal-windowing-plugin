@@ -18,6 +18,8 @@ To dock a floating panel, open its Settings menu and choose **Dock Left**, **Doc
 
 With the **Dock Layout Panel** set to **Visible**, drag a floating panel by its plugin title to an exposed viewport edge. Release over the blue preview to create a docker or append the panel to the group on that edge.
 
+To place the panel beside a specific grouped panel, drag over the left, right, top, or bottom part of that panel's body. The **Moving** card follows the pointer, and the outline shows the insertion side. A drop across the current split axis creates a nested split. This works with docked groups and groups already in a floating window. The outer viewport bands remain available for whole-edge drops.
+
 Once a docker contains a panel, drag the grey line on the edge facing **Center** to resize the whole region. For a Top docker, drag its bottom edge up or down. Drag the line between expanded panels to resize the panels within their group. Both lines are 2 Slate units wide, with a 6-unit drag target. Scroll along the group's axis when the panels need more space. Use **Expand Right** or **Restore Right Corner** in the docked Top group's Settings to choose which edge owns the top-right corner.
 
 In Blueprint, call **Nest Adjacent Dock Panels** with two neighboring panel handles in the same split to create a child split on the perpendicular axis. The group keeps the existing panel widgets, handles, and order. Floating the group and returning it preserves the nested layout.

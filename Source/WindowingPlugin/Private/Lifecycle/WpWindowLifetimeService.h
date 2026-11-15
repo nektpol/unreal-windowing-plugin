@@ -14,9 +14,11 @@ class UUserWidget;
 class UWpWindowingSubsystem;
 class FWpNativeWindowHost;
 class UWpDockWorkspace;
+class SBox;
 struct FWpWindowRuntimeEntry;
 struct FWpDockGroup;
 struct FWpDockFrame;
+struct FWpDockPanelTarget;
 
 class FWpWindowLifetimeService final : public FGCObject
 {
@@ -67,6 +69,9 @@ private:
 	void DrainDockHosts();
 	UWpDockWorkspace* FindDockWorkspace(const FGuid& SessionId) const;
 	FWpDockGroup* FindEdgeGroup(const FGuid& SessionId, EWpDockSide Side) const;
+	FWpDockGroup* FindPanelDropGroup(const FGuid& SessionId, FWpWindowHandle Source, const FWpDockPanelTarget& Target, FVector2D Screen) const;
+	FWpWindowResult DockPanelBeside(const FGuid& SessionId, FWpWindowHandle Source, const FWpDockPanelTarget& Target, FVector2D Screen, EWpDockSide Side);
+	void CommitFloatingPanelAttachment(FWpWindowRuntimeEntry& Entry, FWpDockGroup& Group, const TSharedRef<SBox>& Slot, FWpDockFrame&& Frame, bool bCollapsed);
 	void CloseGroupChildren(FWpDockGroup& Group, EWpWindowCloseReason Reason);
 	void RemoveGroupMember(FWpWindowRuntimeEntry& Entry);
 	bool CanMoveGroup(const FWpDockGroup& Group) const;
