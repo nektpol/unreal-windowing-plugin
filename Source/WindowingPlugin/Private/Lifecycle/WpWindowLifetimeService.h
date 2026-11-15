@@ -1,0 +1,125 @@
+// Developed by Neko Creative Technologies
+
+#pragma once
+
+#include "CoreMinimal.h"
+#include "Placement/WpPlacement.h"
+#include "UObject/GCObject.h"
+#include "WpWindowTypes.h"
+#include "Widgets/SWindow.h"
+
+class APlayerController;
+class UGameInstance;
+class UUserWidget;
+class UWpWindowingSubsystem;
+class FWpNativeWindowHost;
+class UWpDockWorkspace;
+class SBox;
+struct FWpWindowRuntimeEntry;
+struct FWpDockGroup;
+struct FWpDockFrame;
+struct FWpDockPanelTarget;
+
+class FWpWindowLifetimeService final : public FGCObject
+{
+public:
+	FWpWindowLifetimeService();
+	~FWpWindowLifetimeService() override;
+
+	FWpWindowResult CreateWindow(const FGuid& SessionId, UGameInstance* Owner,
+		UWpWindowingSubsystem* Sink, TSubclassOf<UUserWidget> WidgetClass,
+		const FWpWindowCreateOptions& Options, APlayerController* Player,
+		FWpWindowHandle& OutHandle);
+	FWpWindowResult RequestClose(const FGuid& SessionId, FWpWindowHandle Handle);
+	FWpWindowResult SetTitle(const FGuid& SessionId, FWpWindowHandle Handle,
+		const FText& Title);
+	EWpWindowState GetState(const FGuid& SessionId, FWpWindowHandle Handle) const;
+	FWpWindowFocusSnapshot GetWindowFocus(const FGuid& SessionId) const;
+	FWpWindowResult RegisterDockWorkspace(const FGuid& SessionId, UWpDockWorkspace* Workspace);
+	FWpWindowResult UnregisterDockWorkspace(const FGuid& SessionId, UWpDockWorkspace* Workspace);
+	FWpWindowResult DockWindow(const FGuid& SessionId, FWpWindowHandle Handle, EWpDockSide Side);
+	FWpWindowResult UndockWindow(const FGuid& SessionId, FWpWindowHandle Handle, TOptional<FWpPlacementSnapshot> DropPlacement = {});
+	FWpWindowResult UndockGroup(const FGuid& SessionId, FGuid GroupId);
+	FWpWindowResult DockGroup(const FGuid& SessionId, FGuid GroupId);
+	FWpWindowPresentation GetWindowPresentation(const FGuid& SessionId, FWpWindowHandle Handle) const;
+	void BeginSessionShutdown(const FGuid& SessionId);
+	void Shutdown();
+
+	void AddReferencedObjects(FReferenceCollector& Collector) override;
+	FString GetReferencerName() const override;
+
+	UUserWidget* GetWidgetFromHandle(const FGuid& SessionId, FWpWindowHandle Handle) const;
+
+	FWpWindowResult RenameDockGroup(const FGuid& SessionId, FGuid GroupId, const FText& Title);
+	FWpWindowResult SetWindowCollapsed(const FGuid& SessionId, FWpWindowHandle Handle, bool bCollapsed);
+	FWpWindowResult NestAdjacentDockPanels(const FGuid& SessionId, FWpWindowHandle First, FWpWindowHandle Second);
+
+private:
+	struct FCallbackTarget
+	{
+		FWpWindowLifetimeService* Service = nullptr;
+	};
+
+	FWpWindowRuntimeEntry* FindPublished(const FGuid& SessionId, FWpWindowHandle Handle) const;
+	void BindSlateHooks();
+	void OnNativePreClose(FGuid Id, const SWindow& Window);
+	void OnGroupNativePreClose(FGuid Id, const SWindow& Window);
+	FOnWindowClosed MakeTransferCloseCallback(FGuid Id, bool bGroup, TSharedPtr<bool> CandidateClosed = nullptr);
+	void RetireDockHost(TUniquePtr<FWpNativeWindowHost> Host, bool bCloseObserved = false);
+	void DrainDockHosts();
+	UWpDockWorkspace* FindDockWorkspace(const FGuid& SessionId) const;
+	FWpDockGroup* FindEdgeGroup(const FGuid& SessionId, EWpDockSide Side) const;
+	FWpDockGroup* FindPanelDropGroup(const FGuid& SessionId, FWpWindowHandle Source, const FWpDockPanelTarget& Target, FVector2D Screen) const;
+	bool IsUndockDragCurrent(const FGuid& SessionId, FWpWindowHandle Handle, FGuid GroupId, const SWidget* OriginalSlot, void* CaptureWindow) const;
+	TOptional<FWpPlacementSnapshot> ResolveUndockDrop(const FWpWindowRuntimeEntry& Entry, FVector2D Screen) const;
+	bool IsIndividualDropPanelReady(const FWpWindowRuntimeEntry* Entry, const SWidget* ExpectedSlot = nullptr) const;
+	FWpWindowRuntimeEntry* FindIndividualDropTarget(const FGuid& SessionId, FWpWindowHandle Source, const FWpDockPanelTarget& Target) const;
+	bool CanDropBesidePanel(const FGuid& SessionId, FWpWindowHandle Source, const FWpDockPanelTarget& Target, FVector2D Screen) const;
+	FWpWindowResult GroupFloatingPanels(const FGuid& SessionId, FWpWindowHandle Source, const FWpDockPanelTarget& Target, EWpDockSide Side);
+	FWpWindowResult DockPanelBeside(const FGuid& SessionId, FWpWindowHandle Source, const FWpDockPanelTarget& Target, FVector2D Screen, EWpDockSide Side);
+	void CommitFloatingPanelAttachment(FWpWindowRuntimeEntry& Entry, FWpDockGroup& Group,
+	const TSharedRef<SBox>& Slot, FWpDockFrame&& Frame, bool bCollapsed, TArray<TUniquePtr<FWpNativeWindowHost>>* RetireAfterCommit = nullptr);
+	void CloseGroupChildren(FWpDockGroup& Group, EWpWindowCloseReason Reason);
+	void RemoveGroupMember(FWpWindowRuntimeEntry& Entry);
+	bool CanMoveGroup(const FWpDockGroup& Group) const;
+	FWpWindowResult MoveGroup(const FGuid& SessionId, FGuid GroupId, bool bFloat, TOptional<EWpDockSide> RequestedSide = {});
+	void EmitPresentationChanged(const FGuid& SessionId, FGuid Id);
+
+	TMap<FGuid, TWeakObjectPtr<UWpDockWorkspace>> DockWorkspaces;
+	TMap<FGuid, TSharedPtr<FWpDockGroup>> DockGroups;
+	TArray<TUniquePtr<FWpNativeWindowHost>> RetiringDockHosts;
+	bool bMovingDockPresentation = false;
+	void CloseEntry(FWpWindowRuntimeEntry& Entry, EWpWindowCloseReason Reason);
+	void Rollback(FGuid Id, FWpWindowRuntimeEntry& Entry);
+	void OnSlatePostTick(float DeltaTime);
+	void Drain();
+	void TickWindowFocus();
+	TMap<FGuid, TWeakObjectPtr<UWpWindowingSubsystem>> FocusObservers;
+
+	TMap<FGuid, TUniquePtr<FWpWindowRuntimeEntry>> Entries;
+	TSharedPtr<FCallbackTarget> CallbackTarget;
+	FDelegateHandle PostTickHandle;
+	FDelegateHandle PreShutdownHandle;
+	int32 OperationDepth = 0;
+	bool bShuttingDown = false;
+
+	void LoadPlacements();
+	void CapturePlacement(FWpWindowRuntimeEntry& Entry);
+	void TickPlacements();
+	void FlushPlacements();
+
+	FWpPlacementMap SavedPlacements;
+	FWpPlacementMap DirtyPlacements;
+	TOptional<FString> PlacementTopology;
+	double NextPlacementSample = 0.0;
+	double PlacementFlushAt = 0.0;
+	bool bPlacementLoaded = false;
+	bool bPlacementWritesEnabled = false;
+
+	FWpDockFrame BuildPanelFrame(const FGuid& SessionId, FWpWindowHandle Handle,
+	const TSharedRef<SWidget>& Content, bool bIndividualHost);
+	FWpDockFrame BuildGroupFrame(const FGuid& SessionId, FGuid GroupId,
+		const TSharedRef<SWidget>& Content);
+	void ShowGroupRename(const FGuid& SessionId, FGuid GroupId);
+	void ApplyDockPanelCollapse(FWpWindowRuntimeEntry& Entry, bool bCollapsed);
+};
